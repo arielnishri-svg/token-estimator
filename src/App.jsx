@@ -45,25 +45,13 @@ const getCaps  = (id) => lookup(CAPS, id)    || { effort: true, adaptive: true, 
 const EFFORTS = ["low","medium","high","max"];
 
 const T = {
-  bg0: "#181715",
-  bg1: "#1f1e1b",
-  bg2: "#252320",
-  bg3: "#2e2c28",
-  hairline:  "rgba(250,249,245,0.08)",
-  hairline2: "rgba(250,249,245,0.14)",
-  coral:       "#cc785c",
-  coralDim:    "rgba(204,120,92,0.15)",
-  coralBorder: "rgba(204,120,92,0.4)",
-  onCoral:   "#ffffff",
-  onDark:    "#faf9f5",
-  onDarkSoft:"#a09d96",
-  muted:     "#6c6a64",
-  red:       "#e05c5c",
-  redBg:     "rgba(224,92,92,0.12)",
-  green:     "#5db8a6",
+  bg0: "#181715", bg1: "#1f1e1b", bg2: "#252320", bg3: "#2e2c28",
+  hairline: "rgba(250,249,245,0.08)", hairline2: "rgba(250,249,245,0.14)",
+  coral: "#cc785c", coralDim: "rgba(204,120,92,0.15)", coralBorder: "rgba(204,120,92,0.4)",
+  onCoral: "#ffffff", onDark: "#faf9f5", onDarkSoft: "#a09d96", muted: "#6c6a64",
+  red: "#e05c5c", redBg: "rgba(224,92,92,0.12)", green: "#5db8a6",
   serif: "'Cormorant Garamond', 'Times New Roman', serif",
-  sans:  "'Inter', sans-serif",
-  mono:  "'JetBrains Mono', monospace",
+  sans: "'Inter', sans-serif", mono: "'JetBrains Mono', monospace",
 };
 
 const fmt      = (n) => n.toLocaleString();
@@ -82,10 +70,76 @@ const apiHeaders = (key) => ({
   "anthropic-dangerous-direct-browser-access": "true",
 });
 
+// ── File helpers ──────────────────────────────────────────────────────────────
+const ACCEPTED = ".pdf,.txt,.docx,.doc,.png,.jpg,.jpeg,.webp,.gif";
+
+const fileToBase64 = (file) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result.split(",")[1]);
+  r.onerror = () => rej(new Error("Read failed"));
+  r.readAsDataURL(file);
+});
+
+const readAsText = (file) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result);
+  r.onerror = () => rej(new Error("Read failed"));
+  r.readAsText(file);
+});
+
+const IMAGE_TYPES = ["image/png","image/jpeg","image/webp","image/gif"];
+const DOCX_TYPES  = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/msword"];
+
+// Load mammoth lazily for docx parsing
+let mammothLoaded = false;
+const loadMammoth = () => new Promise((res) => {
+  if (window.mammoth) { res(window.mammoth); return; }
+  if (mammothLoaded) { const iv = setInterval(() => { if (window.mammoth) { clearInterval(iv); res(window.mammoth); } }, 100); return; }
+  mammothLoaded = true;
+  const s = document.createElement("script");
+  s.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
+  s.onload = () => res(window.mammoth);
+  document.head.appendChild(s);
+});
+
+const processFile = async (file) => {
+  if (IMAGE_TYPES.includes(file.type)) {
+    const data = await fileToBase64(file);
+    return { type: "image", mediaType: file.type, data, name: file.name, size: file.size };
+  }
+  if (file.type === "application/pdf") {
+    const data = await fileToBase64(file);
+    return { type: "pdf", data, name: file.name, size: file.size };
+  }
+  if (DOCX_TYPES.includes(file.type) || file.name.endsWith(".docx") || file.name.endsWith(".doc")) {
+    const mammoth = await loadMammoth();
+    const ab = await file.arrayBuffer();
+    const result = await mammoth.extractRawText({ arrayBuffer: ab });
+    return { type: "text", text: result.value, name: file.name, size: file.size };
+  }
+  // txt and anything else
+  const text = await readAsText(file);
+  return { type: "text", text, name: file.name, size: file.size };
+};
+
+const attachmentToContentBlock = (att) => {
+  if (att.type === "image") {
+    return { type: "image", source: { type: "base64", media_type: att.mediaType, data: att.data } };
+  }
+  if (att.type === "pdf") {
+    return { type: "document", source: { type: "base64", media_type: "application/pdf", data: att.data } };
+  }
+  // text (docx extracted / txt)
+  return { type: "text", text: `[File: ${att.name}]\n\n${att.text}` };
+};
+
+const fmtSize = (b) => b < 1024 ? `${b}B` : b < 1048576 ? `${(b/1024).toFixed(1)}KB` : `${(b/1048576).toFixed(1)}MB`;
+
+// ── Components ────────────────────────────────────────────────────────────────
 function Pill({ active, color = "default", onClick, children, disabled }) {
   const colors = {
-    coral:  { bg: T.coralDim,  border: T.coralBorder, text: T.coral    },
-    default:{ bg: "transparent", border: T.hairline,  text: T.onDarkSoft},
+    coral:   { bg: T.coralDim,     border: T.coralBorder, text: T.coral     },
+    default: { bg: "transparent",  border: T.hairline,    text: T.onDarkSoft },
   };
   const c = colors[color] || colors.default;
   return (
@@ -103,18 +157,37 @@ function Pill({ active, color = "default", onClick, children, disabled }) {
 
 function Lbl({ children }) {
   return (
-    <span style={{
-      fontFamily: T.sans, fontSize: 11, color: T.muted,
-      textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: 500,
-    }}>{children}</span>
+    <span style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: 500 }}>
+      {children}
+    </span>
+  );
+}
+
+function AttachmentChip({ att, onRemove }) {
+  const icons = { image: "🖼", pdf: "📄", text: "📝" };
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 6,
+      background: T.bg2, border: `1px solid ${T.hairline2}`,
+      borderRadius: 6, padding: "4px 8px", fontSize: 12, color: T.onDarkSoft,
+      fontFamily: T.sans, maxWidth: 200,
+    }}>
+      <span>{icons[att.type] || "📎"}</span>
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{att.name}</span>
+      <span style={{ color: T.muted, fontSize: 11, flexShrink: 0 }}>{fmtSize(att.size)}</span>
+      <button onClick={onRemove} style={{
+        background: "none", border: "none", cursor: "pointer", color: T.muted,
+        fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0,
+      }}>×</button>
+    </div>
   );
 }
 
 // ── API Key Gate ──────────────────────────────────────────────────────────────
 function ApiKeyScreen({ onSave }) {
-  const [val, setVal]       = useState("");
-  const [show, setShow]     = useState(false);
-  const [err, setErr]       = useState(null);
+  const [val, setVal]         = useState("");
+  const [show, setShow]       = useState(false);
+  const [err, setErr]         = useState(null);
   const [testing, setTesting] = useState(false);
 
   const test = async () => {
@@ -124,66 +197,30 @@ function ApiKeyScreen({ onSave }) {
     try {
       const res  = await fetch("https://api.anthropic.com/v1/models", { headers: apiHeaders(key) });
       const data = await res.json();
-      if (data.error) { setErr(data.error.message); }
+      if (data.error) setErr(data.error.message);
       else { localStorage.setItem(LS_KEY, key); onSave(key); }
     } catch (e) { setErr(e.message); }
     setTesting(false);
   };
 
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      height: "100vh", background: T.bg0, fontFamily: T.sans, gap: 24, padding: 24,
-    }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg0, fontFamily: T.sans, gap: 24, padding: 24 }}>
       <div style={{ textAlign: "center", marginBottom: 8 }}>
-        <div style={{ fontFamily: T.serif, fontSize: 36, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px", marginBottom: 8 }}>
-          Claude Token Estimator
-        </div>
-        <div style={{ fontFamily: T.sans, fontSize: 13, color: T.muted }}>
-          counts tokens and estimates cost before every API call
-        </div>
+        <div style={{ fontFamily: T.serif, fontSize: 36, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px", marginBottom: 8 }}>Claude Token Estimator</div>
+        <div style={{ fontSize: 13, color: T.muted }}>counts tokens and estimates cost before every API call</div>
       </div>
-
-      <div style={{
-        width: "100%", maxWidth: 420, background: T.bg1,
-        border: `1px solid ${T.hairline2}`, borderRadius: 12, padding: 28,
-      }}>
-        <div style={{ fontFamily: T.sans, fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
-          Anthropic API Key
-        </div>
-
+      <div style={{ width: "100%", maxWidth: 420, background: T.bg1, border: `1px solid ${T.hairline2}`, borderRadius: 12, padding: 28 }}>
+        <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>Anthropic API Key</div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <input
-            type={show ? "text" : "password"}
-            value={val}
-            onChange={e => setVal(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && test()}
-            placeholder="sk-ant-..."
-            style={{
-              flex: 1, fontFamily: T.mono, fontSize: 13, padding: "10px 12px",
-              background: T.bg0, color: T.onDark,
-              border: `1px solid ${T.hairline2}`, borderRadius: 8, outline: "none",
-            }}
-          />
-          <button onClick={() => setShow(s => !s)} style={{
-            fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft,
-            background: "transparent", border: `1px solid ${T.hairline2}`,
-            borderRadius: 8, padding: "0 12px", cursor: "pointer",
-          }}>{show ? "hide" : "show"}</button>
+          <input type={show ? "text" : "password"} value={val} onChange={e => setVal(e.target.value)} onKeyDown={e => e.key === "Enter" && test()} placeholder="sk-ant-..."
+            style={{ flex: 1, fontFamily: T.mono, fontSize: 13, padding: "10px 12px", background: T.bg0, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, outline: "none" }} />
+          <button onClick={() => setShow(s => !s)} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "0 12px", cursor: "pointer" }}>{show ? "hide" : "show"}</button>
         </div>
-
-        {err && <div style={{ fontFamily: T.sans, fontSize: 12, color: T.red, marginBottom: 10 }}>{err}</div>}
-
-        <button onClick={test} disabled={testing || !val.trim()} style={{
-          width: "100%", fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px",
-          borderRadius: 8, border: "none", background: T.coral, color: T.onCoral,
-          cursor: testing || !val.trim() ? "not-allowed" : "pointer",
-          opacity: testing || !val.trim() ? 0.5 : 1, transition: "all 0.12s",
-        }}>
+        {err && <div style={{ fontSize: 12, color: T.red, marginBottom: 10 }}>{err}</div>}
+        <button onClick={test} disabled={testing || !val.trim()} style={{ width: "100%", fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px", borderRadius: 8, border: "none", background: T.coral, color: T.onCoral, cursor: testing || !val.trim() ? "not-allowed" : "pointer", opacity: testing || !val.trim() ? 0.5 : 1, transition: "all 0.12s" }}>
           {testing ? "verifying…" : "save & connect →"}
         </button>
-
-        <div style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, marginTop: 14, lineHeight: 1.7 }}>
+        <div style={{ fontSize: 11, color: T.muted, marginTop: 14, lineHeight: 1.7 }}>
           Your key is stored only in your browser's localStorage. It is never sent anywhere except directly to api.anthropic.com.
           Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: T.coral }}>console.anthropic.com</a>.
         </div>
@@ -209,6 +246,8 @@ export default function App() {
   const [showSys, setShowSys]         = useState(false);
   const [messages, setMessages]       = useState([]);
   const [input, setInput]             = useState("");
+  const [attachments, setAttachments] = useState([]);
+  const [processing, setProcessing]   = useState(false);
   const [loading, setLoading]         = useState(false);
   const [counting, setCounting]       = useState(false);
   const [error, setError]             = useState(null);
@@ -216,20 +255,16 @@ export default function App() {
   const [expanded, setExpanded]       = useState({});
   const [estimate, setEstimate]       = useState(null);
   const [showKeyEdit, setShowKeyEdit] = useState(false);
-  const bottomRef = useRef(null);
+  const bottomRef  = useRef(null);
+  const fileRef    = useRef(null);
 
   const loadModels = (key) => {
     setML(true);
     fetch("https://api.anthropic.com/v1/models", { headers: apiHeaders(key) })
       .then(r => r.json())
       .then(data => {
-        const list = (data.data || [])
-          .filter(m => m.id.startsWith("claude-"))
-          .sort((a, b) => {
-            const tier = id => id.includes("opus") ? 0 : id.includes("sonnet") ? 1 : 2;
-            const td = tier(a.id) - tier(b.id);
-            return td !== 0 ? td : b.id.localeCompare(a.id);
-          });
+        const list = (data.data || []).filter(m => m.id.startsWith("claude-"))
+          .sort((a, b) => { const tier = id => id.includes("opus")?0:id.includes("sonnet")?1:2; const td=tier(a.id)-tier(b.id); return td!==0?td:b.id.localeCompare(a.id); });
         setModels(list.length > 0 ? list : FALLBACK_MODELS);
         const def = list.find(m => m.id.includes("sonnet")) || list[0];
         if (def) setModelId(def.id);
@@ -240,7 +275,6 @@ export default function App() {
 
   useEffect(() => { if (apiKey) loadModels(apiKey); }, [apiKey]);
 
-  const handleKeySave = (key) => { setApiKey(key); };
   const forgetKey = () => { localStorage.removeItem(LS_KEY); setApiKey(""); setModels([]); };
 
   const caps       = getCaps(modelId);
@@ -249,7 +283,15 @@ export default function App() {
 
   useEffect(() => { if (!caps.modes.includes(mode)) setMode(caps.modes[0]); }, [modelId]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
-  useEffect(() => { setEstimate(null); }, [input, modelId, mode, effort, budget, maxTok, sysPrompt]);
+  useEffect(() => { setEstimate(null); }, [input, attachments, modelId, mode, effort, budget, maxTok, sysPrompt]);
+
+  // Build user content array (text + attachments)
+  const buildUserContent = (text) => {
+    if (attachments.length === 0) return text;
+    const blocks = attachments.map(attachmentToContentBlock);
+    if (text.trim()) blocks.push({ type: "text", text: text.trim() });
+    return blocks;
+  };
 
   const buildBody = (history, withMax = false) => {
     const body = { model: modelId, messages: history };
@@ -262,12 +304,12 @@ export default function App() {
   };
 
   const getHistory = () => [
-    ...messages.map(m => ({ role: m.role, content: m.text })),
-    { role: "user", content: input.trim() },
+    ...messages.map(m => ({ role: m.role, content: m.content || m.text })),
+    { role: "user", content: buildUserContent(input) },
   ];
 
   const countTokens = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() && attachments.length === 0) return;
     setCounting(true); setError(null);
     try {
       const res  = await fetch("https://api.anthropic.com/v1/messages/count_tokens", {
@@ -287,11 +329,14 @@ export default function App() {
 
   const executeSend = async () => {
     const txt = input.trim();
-    if (!txt || loading) return;
-    const estIn = estimate?.inputTok;
+    if (!txt && attachments.length === 0) return;
+    if (loading) return;
+    const estIn   = estimate?.inputTok;
     const history = getHistory();
-    setInput(""); setEstimate(null); setError(null);
-    setMessages(prev => [...prev, { role: "user", text: txt }]);
+    const userContent = buildUserContent(txt);
+    const attNames = attachments.map(a => a.name);
+    setInput(""); setAttachments([]); setEstimate(null); setError(null);
+    setMessages(prev => [...prev, { role: "user", text: txt, content: userContent, attachments: attNames }]);
     setLoading(true);
     try {
       const res  = await fetch("https://api.anthropic.com/v1/messages", {
@@ -319,35 +364,39 @@ export default function App() {
     setLoading(false);
   };
 
-  const onKey  = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); estimate ? executeSend() : countTokens(); } };
-  const clear  = () => { setMessages([]); setTotal({ in: 0, out: 0, cost: 0 }); setExpanded({}); setError(null); setEstimate(null); };
+  const handleFiles = async (files) => {
+    setProcessing(true); setError(null);
+    try {
+      const processed = await Promise.all(Array.from(files).map(processFile));
+      setAttachments(prev => [...prev, ...processed]);
+    } catch (e) { setError(`File error: ${e.message}`); }
+    setProcessing(false);
+  };
+
+  const onDrop = (e) => { e.preventDefault(); if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); };
+  const onKey  = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); countTokens(); } };
+  const clear  = () => { setMessages([]); setTotal({ in:0, out:0, cost:0 }); setExpanded({}); setError(null); setEstimate(null); setAttachments([]); };
 
   const estLikely = estimate ? calcCost(estimate.inputTok, price.in) + calcCost(estimate.likelyOut + estimate.thinkMax * 0.3, price.out) : 0;
   const estMax    = estimate ? calcCost(estimate.inputTok, price.in) + calcCost(estimate.maxOut + estimate.thinkMax, price.out) : 0;
+  const modelLabel = (m) => { const p = getPrice(m.id); return `${m.display_name || m.id}  ·  $${p.in}/$${p.out}`; };
+  const canSend = input.trim().length > 0 || attachments.length > 0;
 
-  const modelLabel = (m) => {
-    const name = m.display_name || m.id;
-    const p = getPrice(m.id);
-    return `${name}  ·  $${p.in}/$${p.out}`;
-  };
-
-  if (!apiKey) return <ApiKeyScreen onSave={handleKeySave} />;
+  if (!apiKey) return <ApiKeyScreen onSave={setApiKey} />;
 
   return (
-    <div style={{ fontFamily: T.sans, display: "flex", flexDirection: "column", height: "100vh", background: T.bg0, color: T.onDark, overflow: "hidden" }}>
+    <div style={{ fontFamily: T.sans, display: "flex", flexDirection: "column", height: "100vh", background: T.bg0, color: T.onDark, overflow: "hidden" }}
+      onDragOver={e => e.preventDefault()} onDrop={onDrop}>
 
-      {/* NAV / CONFIG */}
+      {/* CONFIG */}
       <div style={{ background: T.bg1, borderBottom: `1px solid ${T.hairline}`, padding: "13px 20px", flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 11 }}>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Lbl>Model</Lbl>
             {modelsLoading
-              ? <span style={{ fontFamily: T.sans, fontSize: 12, color: T.muted }}>loading…</span>
-              : <select value={modelId} onChange={e => setModelId(e.target.value)} style={{
-                  fontFamily: T.sans, fontSize: 13, background: T.bg3, color: T.onDark,
-                  border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "5px 10px", maxWidth: 280,
-                }}>
+              ? <span style={{ fontSize: 12, color: T.muted }}>loading…</span>
+              : <select value={modelId} onChange={e => setModelId(e.target.value)} style={{ fontFamily: T.sans, fontSize: 13, background: T.bg3, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "5px 10px", maxWidth: 280 }}>
                   {models.map(m => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
                 </select>
             }
@@ -372,26 +421,16 @@ export default function App() {
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
             {total.in > 0 && <>
               <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>{fmt(total.in)}↓ {fmt(total.out)}↑</span>
-              <span style={{ fontFamily: T.mono, fontSize: 13, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 8, padding: "3px 10px", fontWeight: 500 }}>
-                {fmtCost(total.cost)}
-              </span>
+              <span style={{ fontFamily: T.mono, fontSize: 13, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 8, padding: "3px 10px", fontWeight: 500 }}>{fmtCost(total.cost)}</span>
             </>}
-            {messages.length > 0 && (
-              <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "4px 12px", cursor: "pointer" }}>clear</button>
-            )}
-            <button onClick={() => setShowKeyEdit(s => !s)} style={{
-              fontFamily: T.sans, fontSize: 12, color: showKeyEdit ? T.coral : T.muted,
-              background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`,
-              borderRadius: 8, padding: "4px 10px", cursor: "pointer",
-            }}>api key</button>
+            {messages.length > 0 && <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "4px 12px", cursor: "pointer" }}>clear</button>}
+            <button onClick={() => setShowKeyEdit(s => !s)} style={{ fontFamily: T.sans, fontSize: 12, color: showKeyEdit ? T.coral : T.muted, background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>api key</button>
           </div>
         </div>
 
         {showKeyEdit && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.muted }}>
-              key: {apiKey.slice(0, 16)}…{apiKey.slice(-4)}
-            </span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.muted }}>key: {apiKey.slice(0,16)}…{apiKey.slice(-4)}</span>
             <button onClick={forgetKey} style={{ fontFamily: T.sans, fontSize: 12, color: T.red, background: "transparent", border: `1px solid ${T.red}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>forget key</button>
             <button onClick={() => setShowKeyEdit(false)} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>done</button>
           </div>
@@ -401,37 +440,26 @@ export default function App() {
           {mode === "extended" && (
             <div style={{ display: "flex", gap: 9, alignItems: "center", flex: 1, minWidth: 160 }}>
               <Lbl>Think budget</Lbl>
-              <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget}
-                onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
+              <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget} onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
               <span style={{ fontFamily: T.mono, fontSize: 13, color: budget >= maxTok - 512 ? T.red : T.coral, minWidth: 52, textAlign: "right" }}>{fmt(budget)}</span>
             </div>
           )}
           <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
             <Lbl>Max out</Lbl>
-            <input type="range" min={1024} max={32000} step={512} value={maxTok}
-              onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
+            <input type="range" min={1024} max={32000} step={512} value={maxTok} onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
             <span style={{ fontFamily: T.mono, fontSize: 13, color: T.onDark, minWidth: 52, textAlign: "right" }}>{fmt(maxTok)}</span>
           </div>
           {mode !== "off" && (
             <label style={{ display: "flex", gap: 7, alignItems: "center", fontFamily: T.sans, fontSize: 13, color: T.onDarkSoft, cursor: "pointer" }}>
-              <input type="checkbox" checked={showThink} onChange={e => setShowThink(e.target.checked)} style={{ accentColor: T.coral }} />
-              show thinking
+              <input type="checkbox" checked={showThink} onChange={e => setShowThink(e.target.checked)} style={{ accentColor: T.coral }} /> show thinking
             </label>
           )}
-          <button onClick={() => setShowSys(s => !s)} style={{
-            fontFamily: T.sans, fontSize: 12, color: showSys ? T.coral : T.onDarkSoft,
-            background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`,
-            borderRadius: 8, padding: "4px 12px", cursor: "pointer",
-          }}>sys prompt</button>
+          <button onClick={() => setShowSys(s => !s)} style={{ fontFamily: T.sans, fontSize: 12, color: showSys ? T.coral : T.onDarkSoft, background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "4px 12px", cursor: "pointer" }}>sys prompt</button>
         </div>
 
         {showSys && (
           <textarea value={sysPrompt} onChange={e => setSysPrompt(e.target.value)} placeholder="System prompt…"
-            style={{
-              width: "100%", marginTop: 10, fontFamily: T.sans, fontSize: 13, padding: "9px 12px",
-              minHeight: 54, resize: "vertical", background: T.bg0, color: T.onDark,
-              border: `1px solid ${T.hairline2}`, borderRadius: 8, boxSizing: "border-box",
-            }} />
+            style={{ width: "100%", marginTop: 10, fontFamily: T.sans, fontSize: 13, padding: "9px 12px", minHeight: 54, resize: "vertical", background: T.bg0, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, boxSizing: "border-box" }} />
         )}
       </div>
 
@@ -440,7 +468,7 @@ export default function App() {
         {messages.length === 0 && !loading && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 80 }}>
             <div style={{ fontFamily: T.serif, fontSize: 32, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Configure · Estimate · Send</div>
-            <div style={{ fontFamily: T.sans, fontSize: 13, color: T.muted }}>counts tokens before every burn</div>
+            <div style={{ fontSize: 13, color: T.muted }}>counts tokens before every burn · supports pdf, docx, images, txt</div>
           </div>
         )}
 
@@ -453,33 +481,31 @@ export default function App() {
                   <span style={{ fontSize: 9 }}>{expanded[i] ? "▼" : "▶"}</span> Thinking
                 </button>
                 {expanded[i] && (
-                  <div style={{
-                    fontFamily: T.mono, fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.65,
-                    maxHeight: 170, overflowY: "auto", padding: "12px 14px",
-                    background: T.bg2, border: `1px solid ${T.hairline}`, borderRadius: 8, color: T.onDarkSoft, marginTop: 5,
-                  }}>
+                  <div style={{ fontFamily: T.mono, fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.65, maxHeight: 170, overflowY: "auto", padding: "12px 14px", background: T.bg2, border: `1px solid ${T.hairline}`, borderRadius: 8, color: T.onDarkSoft, marginTop: 5 }}>
                     {msg.thinking}
                   </div>
                 )}
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-              <div style={{
-                maxWidth: "80%", padding: "12px 16px",
-                borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "2px 12px 12px 12px",
-                background: msg.role === "user" ? T.bg2 : T.bg1,
-                border: `1px solid ${msg.role === "user" ? T.hairline2 : T.hairline}`,
-                fontFamily: T.sans, fontSize: 14, lineHeight: 1.7, color: T.onDark,
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>{msg.text}</div>
+            <div style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", flexDirection: "column", alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
+              {msg.attachments?.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                  {msg.attachments.map((name, j) => (
+                    <div key={j} style={{ fontSize: 11, color: T.onDarkSoft, background: T.bg2, border: `1px solid ${T.hairline2}`, borderRadius: 6, padding: "3px 8px", fontFamily: T.sans }}>📎 {name}</div>
+                  ))}
+                </div>
+              )}
+              {msg.text && (
+                <div style={{ maxWidth: "80%", padding: "12px 16px", borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "2px 12px 12px 12px", background: msg.role === "user" ? T.bg2 : T.bg1, border: `1px solid ${msg.role === "user" ? T.hairline2 : T.hairline}`, fontFamily: T.sans, fontSize: 14, lineHeight: 1.7, color: T.onDark, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                  {msg.text}
+                </div>
+              )}
             </div>
 
             {msg.role === "assistant" && msg.usage && (
               <div style={{ display: "flex", gap: 10, marginTop: 7, alignItems: "center", flexWrap: "wrap", paddingLeft: 2 }}>
-                <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>
-                  ↓{fmt(msg.usage.in)} ↑{fmt(msg.usage.out)}{msg.usage.cr > 0 ? ` cache:${fmt(msg.usage.cr)}` : ""}
-                </span>
+                <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>↓{fmt(msg.usage.in)} ↑{fmt(msg.usage.out)}{msg.usage.cr > 0 ? ` cache:${fmt(msg.usage.cr)}` : ""}</span>
                 <span style={{ fontFamily: T.mono, fontSize: 13, color: T.coral, fontWeight: 500 }}>{fmtCost(msg.usage.cost)}</span>
                 {msg.estimatedIn && (
                   <span style={{ fontFamily: T.mono, fontSize: 12, color: Math.abs(msg.usage.in - msg.estimatedIn) > msg.estimatedIn * 0.1 ? T.red : T.green }}>
@@ -496,14 +522,10 @@ export default function App() {
 
         {loading && (
           <div style={{ display: "flex" }}>
-            <div style={{ fontFamily: T.sans, fontSize: 14, color: T.coral, padding: "11px 16px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 10, letterSpacing: "0.02em" }}>
-              burning tokens…
-            </div>
+            <div style={{ fontFamily: T.sans, fontSize: 14, color: T.coral, padding: "11px 16px", background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 10 }}>burning tokens…</div>
           </div>
         )}
-        {error && (
-          <div style={{ fontFamily: T.mono, fontSize: 13, color: T.red, padding: "10px 14px", background: T.redBg, border: `1px solid ${T.red}`, borderRadius: 8 }}>{error}</div>
-        )}
+        {error && <div style={{ fontFamily: T.mono, fontSize: 13, color: T.red, padding: "10px 14px", background: T.redBg, border: `1px solid ${T.red}`, borderRadius: 8 }}>{error}</div>}
         <div ref={bottomRef} />
       </div>
 
@@ -516,7 +538,7 @@ export default function App() {
           </div>
 
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontFamily: T.sans, fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>cost by model — same message</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>cost by model — same message</div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(models.length, 4)}, 1fr)`, gap: 8 }}>
               {models.map(m => {
                 const likely = crossCost(estimate.inputTok, estimate.likelyOut, estimate.thinkFrac, m.id);
@@ -525,25 +547,20 @@ export default function App() {
                 const p      = getPrice(m.id);
                 const name   = (m.display_name || m.id).replace("Claude ", "");
                 return (
-                  <div key={m.id} onClick={() => setModelId(m.id)} style={{
-                    padding: "10px 12px", borderRadius: 8, cursor: "pointer",
-                    background: active ? T.coralDim : T.bg2,
-                    border: `1px solid ${active ? T.coralBorder : T.hairline2}`,
-                    transition: "all 0.12s",
-                  }}>
+                  <div key={m.id} onClick={() => setModelId(m.id)} style={{ padding: "10px 12px", borderRadius: 8, cursor: "pointer", background: active ? T.coralDim : T.bg2, border: `1px solid ${active ? T.coralBorder : T.hairline2}`, transition: "all 0.12s" }}>
                     <div style={{ fontFamily: T.sans, fontSize: 12, color: active ? T.coral : T.onDarkSoft, marginBottom: 3, fontWeight: active ? 500 : 400 }}>{name}{active ? " ✓" : ""}</div>
-                    <div style={{ fontFamily: T.serif, fontSize: 20, color: active ? T.coral : T.onDark, fontWeight: 400 }}>{fmtCost(likely)}</div>
-                    <div style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, marginTop: 2 }}>up to {fmtCost(max)}</div>
-                    <div style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, marginTop: 1 }}>${p.in}/${p.out}/MTok</div>
+                    <div style={{ fontFamily: T.serif, fontSize: 20, color: active ? T.coral : T.onDark }}>{fmtCost(likely)}</div>
+                    <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>up to {fmtCost(max)}</div>
+                    <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>${p.in}/${p.out}/MTok</div>
                   </div>
                 );
               })}
             </div>
-            <div style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, marginTop: 6 }}>click a card to switch model before sending</div>
+            <div style={{ fontSize: 11, color: T.muted, marginTop: 6 }}>click a card to switch model before sending</div>
           </div>
 
           <div style={{ borderTop: `1px solid ${T.hairline}`, paddingTop: 12, marginBottom: 12 }}>
-            <div style={{ fontFamily: T.sans, fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
               {(models.find(m => m.id === modelId)?.display_name || modelId).replace("Claude ", "")} breakdown
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px 18px" }}>
@@ -556,64 +573,77 @@ export default function App() {
                   : { label: "Out (max)",   val: fmtCost(calcCost(estimate.maxOut, price.out)),  note: `${fmt(estimate.maxOut)} tok` },
               ].map(({ label, val, note }) => (
                 <div key={label}>
-                  <div style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, marginBottom: 3 }}>{label}</div>
-                  <div style={{ fontFamily: T.serif, fontSize: 18, color: T.onDark, fontWeight: 400 }}>{val}</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginBottom: 3 }}>{label}</div>
+                  <div style={{ fontFamily: T.serif, fontSize: 18, color: T.onDark }}>{val}</div>
                   <div style={{ fontFamily: T.mono, fontSize: 11, color: T.onDarkSoft, marginTop: 2 }}>{note}</div>
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 16, alignItems: "baseline" }}>
-              <span style={{ fontFamily: T.sans, fontSize: 13, color: T.onDarkSoft }}>Likely total:</span>
-              <span style={{ fontFamily: T.serif, fontSize: 26, color: T.coral, fontWeight: 400 }}>{fmtCost(estLikely)}</span>
-              <span style={{ fontFamily: T.sans, fontSize: 12, color: T.muted }}>ceiling: {fmtCost(estMax)}</span>
+              <span style={{ fontSize: 13, color: T.onDarkSoft }}>Likely total:</span>
+              <span style={{ fontFamily: T.serif, fontSize: 26, color: T.coral }}>{fmtCost(estLikely)}</span>
+              <span style={{ fontSize: 12, color: T.muted }}>ceiling: {fmtCost(estMax)}</span>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button onClick={() => setEstimate(null)} style={{
-              fontFamily: T.sans, fontSize: 13, padding: "8px 20px", borderRadius: 8,
-              border: `1px solid ${T.hairline2}`, background: "transparent", color: T.onDarkSoft, cursor: "pointer",
-            }}>cancel</button>
-            <button onClick={executeSend} style={{
-              fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "8px 24px", borderRadius: 8,
-              border: "none", background: T.coral, color: T.onCoral, cursor: "pointer", letterSpacing: "0.02em",
-            }}>send it →</button>
+            <button onClick={() => setEstimate(null)} style={{ fontFamily: T.sans, fontSize: 13, padding: "8px 20px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: "transparent", color: T.onDarkSoft, cursor: "pointer" }}>cancel</button>
+            <button onClick={executeSend} style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "8px 24px", borderRadius: 8, border: "none", background: T.coral, color: T.onCoral, cursor: "pointer" }}>send it →</button>
           </div>
         </div>
       )}
 
       {/* INPUT */}
       <div style={{
-        borderTop: `1px solid ${estimate ? T.coralBorder : T.hairline}`,
+        borderTop: `1px solid ${estimate ? T.hairline : T.hairline}`,
         margin: estimate ? "0 16px 16px" : 0,
         border: estimate ? `1px solid ${T.coralBorder}` : undefined,
-        borderTop: estimate ? `1px solid ${T.hairline}` : `1px solid ${T.hairline}`,
         borderRadius: estimate ? "0 0 10px 10px" : 0,
-        padding: "13px 20px", display: "flex", gap: 8, alignItems: "flex-end",
-        background: T.bg1, flexShrink: 0,
+        padding: "12px 16px", background: T.bg1, flexShrink: 0,
       }}>
-        <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey}
-          disabled={loading || counting}
-          placeholder={estimate ? "edit message to reset estimate…" : "message… enter to estimate · then send"}
-          rows={1} style={{
-            flex: 1, resize: "none", fontFamily: T.sans, fontSize: 14, padding: "10px 13px",
-            borderRadius: 8, border: `1px solid ${T.hairline2}`, background: T.bg0,
-            color: T.onDark, lineHeight: 1.6, minHeight: 42,
-          }} />
-        {!estimate && (
-          <button onClick={countTokens}
-            disabled={loading || counting || !input.trim()} style={{
-              fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px 20px", height: 44, flexShrink: 0,
-              borderRadius: 8, border: "none",
-              background: T.bg3,
-              color: T.onDarkSoft,
-              cursor: (loading || counting || !input.trim()) ? "not-allowed" : "pointer",
-              transition: "all 0.12s",
-              opacity: (loading || counting || !input.trim()) ? 0.4 : 1,
-            }}>
-            {counting ? "counting…" : "estimate"}
-          </button>
+        {/* Attachment chips */}
+        {attachments.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {attachments.map((att, i) => (
+              <AttachmentChip key={i} att={att} onRemove={() => setAttachments(prev => prev.filter((_, j) => j !== i))} />
+            ))}
+          </div>
         )}
+
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          {/* Hidden file input */}
+          <input ref={fileRef} type="file" accept={ACCEPTED} multiple onChange={e => { if (e.target.files.length) handleFiles(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
+
+          {/* Paperclip button */}
+          <button onClick={() => fileRef.current?.click()} disabled={processing} title="Attach file (pdf, docx, txt, image)" style={{
+            background: "transparent", border: `1px solid ${T.hairline2}`, borderRadius: 8,
+            width: 42, height: 42, flexShrink: 0, cursor: processing ? "wait" : "pointer",
+            color: attachments.length > 0 ? T.coral : T.onDarkSoft, fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
+            opacity: processing ? 0.5 : 1,
+          }}>
+            {processing ? "⏳" : "📎"}
+          </button>
+
+          <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey}
+            disabled={loading || counting}
+            placeholder={attachments.length > 0 ? "add a message (optional)…" : "message… enter to estimate · or attach a file"}
+            rows={1} style={{ flex: 1, resize: "none", fontFamily: T.sans, fontSize: 14, padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: T.bg0, color: T.onDark, lineHeight: 1.6, minHeight: 42 }} />
+
+          {!estimate && (
+            <button onClick={countTokens} disabled={loading || counting || !canSend} style={{
+              fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px 20px", height: 42, flexShrink: 0,
+              borderRadius: 8, border: "none", background: T.bg3, color: T.onDarkSoft,
+              cursor: (loading || counting || !canSend) ? "not-allowed" : "pointer",
+              transition: "all 0.12s", opacity: (loading || counting || !canSend) ? 0.4 : 1,
+            }}>
+              {counting ? "counting…" : "estimate"}
+            </button>
+          )}
+        </div>
+
+        <div style={{ marginTop: 6, fontSize: 11, color: T.muted, paddingLeft: 2 }}>
+          supports pdf, docx, txt, png, jpg, webp · drag & drop anywhere
+        </div>
       </div>
     </div>
   );
