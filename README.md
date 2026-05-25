@@ -91,7 +91,7 @@ Configure settings → Type message → Attach files (optional) → Press Enter 
 You are a concise assistant. Never use bullet points.
 ```
 ```
-Always respond in Hebrew.
+Always respond in French.
 ```
 ```
 You are a senior Python engineer. Keep answers technical and skip explanations.

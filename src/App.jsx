@@ -633,7 +633,7 @@ export default function App() {
           {!estimate && (
             <button onClick={countTokens} disabled={loading || counting || !canSend} style={{
               fontFamily: T.sans, fontSize: 15, fontWeight: 500, padding: "10px 22px", height: 44, flexShrink: 0,
-              borderRadius: 8, border: "none", background: T.bg3, color: T.onDarkSoft,
+              borderRadius: 8, border: "none", background: T.coral, color: T.onCoral,
               cursor: (loading || counting || !canSend) ? "not-allowed" : "pointer",
               transition: "all 0.12s", opacity: (loading || counting || !canSend) ? 0.4 : 1,
             }}>
