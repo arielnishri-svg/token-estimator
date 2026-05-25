@@ -170,7 +170,7 @@ export default function App(){
   const modelLabel=(m)=>{const p=getPrice(m.id);return `${m.display_name||m.id}  ·  $${p.in}/$${p.out}`;};
 
   return(
-    <div style={{fontFamily:T.sans,display:"flex",flexDirection:"column",height:700,background:T.bg0,color:T.onDark,borderRadius:8,overflow:"hidden",border:`1px solid ${T.hairline2}`}}>
+    <div style={{fontFamily:T.sans,display:"flex",flexDirection:"column",height:"100vh",background:T.bg0,color:T.onDark,overflow:"hidden"}}>
       <div style={{background:T.bg1,borderBottom:`1px solid ${T.hairline}`,padding:"13px 20px",flexShrink:0}}>
         <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:11}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -221,7 +221,7 @@ export default function App(){
       <div style={{flex:1,overflowY:"auto",padding:"20px 20px 10px",display:"flex",flexDirection:"column",gap:18}}>
         {messages.length===0&&!loading&&(
           <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,paddingTop:80}}>
-            <div style={{fontFamily:T.serif,fontSize:32,fontWeight:400,color:T.onDark,letterSpacing:"-0.5px"}}>Configure - Estimate - Send</div>
+            <div style={{fontFamily:T.serif,fontSize:32,fontWeight:400,color:T.onDark,letterSpacing:"-0.5px"}}>Configure · Estimate · Send</div>
             <div style={{fontSize:13,color:T.muted}}>counts tokens before every burn</div>
           </div>
         )}
