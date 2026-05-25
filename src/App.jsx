@@ -144,7 +144,7 @@ function Pill({ active, color = "default", onClick, children, disabled }) {
   const c = colors[color] || colors.default;
   return (
     <button onClick={onClick} disabled={disabled} style={{
-      fontFamily: T.sans, fontSize: 12, padding: "5px 11px", borderRadius: 8,
+      fontFamily: T.sans, fontSize: 14, padding: "6px 13px", borderRadius: 8,
       border: `1px solid ${active ? c.border : T.hairline}`,
       background: active ? c.bg : "transparent",
       color: active ? c.text : T.onDarkSoft,
@@ -157,7 +157,7 @@ function Pill({ active, color = "default", onClick, children, disabled }) {
 
 function Lbl({ children }) {
   return (
-    <span style={{ fontFamily: T.sans, fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: 500 }}>
+    <span style={{ fontFamily: T.sans, fontSize: 13, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: 500 }}>
       {children}
     </span>
   );
@@ -396,7 +396,7 @@ export default function App() {
             <Lbl>Model</Lbl>
             {modelsLoading
               ? <span style={{ fontSize: 12, color: T.muted }}>loading…</span>
-              : <select value={modelId} onChange={e => setModelId(e.target.value)} style={{ fontFamily: T.sans, fontSize: 13, background: T.bg3, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "5px 10px", maxWidth: 280 }}>
+              : <select value={modelId} onChange={e => setModelId(e.target.value)} style={{ fontFamily: T.sans, fontSize: 15, background: T.bg3, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "6px 11px", maxWidth: 300 }}>
                   {models.map(m => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
                 </select>
             }
@@ -420,11 +420,12 @@ export default function App() {
 
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
             {total.in > 0 && <>
-              <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>{fmt(total.in)}↓ {fmt(total.out)}↑</span>
-              <span style={{ fontFamily: T.mono, fontSize: 13, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 8, padding: "3px 10px", fontWeight: 500 }}>{fmtCost(total.cost)}</span>
+              <span style={{ fontFamily: T.mono, fontSize: 14, color: T.onDarkSoft }}>{fmt(total.in)}↓ {fmt(total.out)}↑</span>
+              <span style={{ fontFamily: T.mono, fontSize: 15, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 8, padding: "4px 12px", fontWeight: 500 }}>{fmtCost(total.cost)}</span>
             </>}
-            {messages.length > 0 && <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "4px 12px", cursor: "pointer" }}>clear</button>}
-            <button onClick={() => setShowKeyEdit(s => !s)} style={{ fontFamily: T.sans, fontSize: 12, color: showKeyEdit ? T.coral : T.muted, background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "4px 10px", cursor: "pointer" }}>api key</button>
+            {messages.length > 0 && <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>clear</button>}
+            <button onClick={() => setShowKeyEdit(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showKeyEdit ? T.coral : T.muted, background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>api key</button>
+            <a href="https://github.com/arielnishri-svg/token-estimator#readme" target="_blank" rel="noreferrer" style={{ fontFamily: T.sans, fontSize: 14, color: T.muted, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>docs ↗</a>
           </div>
         </div>
 
@@ -441,20 +442,20 @@ export default function App() {
             <div style={{ display: "flex", gap: 9, alignItems: "center", flex: 1, minWidth: 160 }}>
               <Lbl>Think budget</Lbl>
               <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget} onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
-              <span style={{ fontFamily: T.mono, fontSize: 13, color: budget >= maxTok - 512 ? T.red : T.coral, minWidth: 52, textAlign: "right" }}>{fmt(budget)}</span>
+              <span style={{ fontFamily: T.mono, fontSize: 15, color: budget >= maxTok - 512 ? T.red : T.coral, minWidth: 52, textAlign: "right" }}>{fmt(budget)}</span>
             </div>
           )}
           <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
             <Lbl>Max out</Lbl>
             <input type="range" min={1024} max={32000} step={512} value={maxTok} onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
-            <span style={{ fontFamily: T.mono, fontSize: 13, color: T.onDark, minWidth: 52, textAlign: "right" }}>{fmt(maxTok)}</span>
+            <span style={{ fontFamily: T.mono, fontSize: 15, color: T.onDark, minWidth: 52, textAlign: "right" }}>{fmt(maxTok)}</span>
           </div>
           {mode !== "off" && (
-            <label style={{ display: "flex", gap: 7, alignItems: "center", fontFamily: T.sans, fontSize: 13, color: T.onDarkSoft, cursor: "pointer" }}>
+            <label style={{ display: "flex", gap: 7, alignItems: "center", fontFamily: T.sans, fontSize: 15, color: T.onDarkSoft, cursor: "pointer" }}>
               <input type="checkbox" checked={showThink} onChange={e => setShowThink(e.target.checked)} style={{ accentColor: T.coral }} /> show thinking
             </label>
           )}
-          <button onClick={() => setShowSys(s => !s)} style={{ fontFamily: T.sans, fontSize: 12, color: showSys ? T.coral : T.onDarkSoft, background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "4px 12px", cursor: "pointer" }}>sys prompt</button>
+          <button onClick={() => setShowSys(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showSys ? T.coral : T.onDarkSoft, background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>sys prompt</button>
         </div>
 
         {showSys && (
@@ -497,7 +498,7 @@ export default function App() {
                 </div>
               )}
               {msg.text && (
-                <div style={{ maxWidth: "80%", padding: "12px 16px", borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "2px 12px 12px 12px", background: msg.role === "user" ? T.bg2 : T.bg1, border: `1px solid ${msg.role === "user" ? T.hairline2 : T.hairline}`, fontFamily: T.sans, fontSize: 14, lineHeight: 1.7, color: T.onDark, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                <div style={{ maxWidth: "80%", padding: "12px 16px", borderRadius: msg.role === "user" ? "12px 12px 2px 12px" : "2px 12px 12px 12px", background: msg.role === "user" ? T.bg2 : T.bg1, border: `1px solid ${msg.role === "user" ? T.hairline2 : T.hairline}`, fontFamily: T.sans, fontSize: 16, lineHeight: 1.7, color: T.onDark, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
                   {msg.text}
                 </div>
               )}
@@ -627,11 +628,11 @@ export default function App() {
           <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey}
             disabled={loading || counting}
             placeholder={attachments.length > 0 ? "add a message (optional)…" : "message… enter to estimate · or attach a file"}
-            rows={1} style={{ flex: 1, resize: "none", fontFamily: T.sans, fontSize: 14, padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: T.bg0, color: T.onDark, lineHeight: 1.6, minHeight: 42 }} />
+            rows={1} style={{ flex: 1, resize: "none", fontFamily: T.sans, fontSize: 16, padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: T.bg0, color: T.onDark, lineHeight: 1.6, minHeight: 42 }} />
 
           {!estimate && (
             <button onClick={countTokens} disabled={loading || counting || !canSend} style={{
-              fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px 20px", height: 42, flexShrink: 0,
+              fontFamily: T.sans, fontSize: 15, fontWeight: 500, padding: "10px 22px", height: 44, flexShrink: 0,
               borderRadius: 8, border: "none", background: T.bg3, color: T.onDarkSoft,
               cursor: (loading || counting || !canSend) ? "not-allowed" : "pointer",
               transition: "all 0.12s", opacity: (loading || counting || !canSend) ? 0.4 : 1,
