@@ -600,18 +600,20 @@ export default function App() {
             borderRadius: 8, border: `1px solid ${T.hairline2}`, background: T.bg0,
             color: T.onDark, lineHeight: 1.6, minHeight: 42,
           }} />
-        <button onClick={estimate ? executeSend : countTokens}
-          disabled={loading || counting || !input.trim()} style={{
-            fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px 20px", height: 44, flexShrink: 0,
-            borderRadius: 8, border: "none",
-            background: estimate ? T.coral : T.bg3,
-            color: estimate ? T.onCoral : T.onDarkSoft,
-            cursor: (loading || counting || !input.trim()) ? "not-allowed" : "pointer",
-            transition: "all 0.12s",
-            opacity: (loading || counting || !input.trim()) ? 0.4 : 1,
-          }}>
-          {counting ? "counting…" : estimate ? "send →" : "estimate"}
-        </button>
+        {!estimate && (
+          <button onClick={countTokens}
+            disabled={loading || counting || !input.trim()} style={{
+              fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "10px 20px", height: 44, flexShrink: 0,
+              borderRadius: 8, border: "none",
+              background: T.bg3,
+              color: T.onDarkSoft,
+              cursor: (loading || counting || !input.trim()) ? "not-allowed" : "pointer",
+              transition: "all 0.12s",
+              opacity: (loading || counting || !input.trim()) ? 0.4 : 1,
+            }}>
+            {counting ? "counting…" : "estimate"}
+          </button>
+        )}
       </div>
     </div>
   );
