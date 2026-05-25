@@ -253,7 +253,7 @@ export default function App() {
     if (withMax) body.max_tokens = maxTok;
     if (sysPrompt.trim()) body.system = sysPrompt.trim();
     if (mode === "extended")                { body.thinking = { type: "enabled", budget_tokens: safeBudget }; }
-    else if (mode === "adaptive")           { body.thinking = { type: "adaptive" }; body.effort = effort; }
+    else if (mode === "adaptive")           { body.thinking = { type: "adaptive" }; }
     else if (mode === "off" && caps.effort) { body.effort = effort; }
     return body;
   };
