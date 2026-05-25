@@ -221,8 +221,22 @@ function ApiKeyScreen({ onSave }) {
           {testing ? "verifying…" : "save & connect →"}
         </button>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 14, lineHeight: 1.7 }}>
-          Your key is stored only in your browser's localStorage. It is never sent anywhere except directly to api.anthropic.com.
+          Your key is stored only in your browser’s localStorage. It is never sent anywhere except directly to api.anthropic.com.
           Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: T.coral }}>console.anthropic.com</a>.
+        </div>
+      </div>
+
+      <div style={{ width: "100%", maxWidth: 420, background: T.bg1, border: `1px solid ${T.hairline2}`, borderRadius: 12, padding: 24 }}>
+        <div style={{ fontSize: 13, color: T.onDark, marginBottom: 10, lineHeight: 1.6 }}>
+          Don’t want to run the standalone app? You can drop the token estimator directly into any Claude chat as an artifact — no API key required since claude.ai handles auth.
+        </div>
+        <a href="/snippet.txt" download="claude-token-estimator-snippet.txt" style={{
+          display: "block", textAlign: "center", fontFamily: T.sans, fontSize: 13, fontWeight: 500,
+          color: T.onDarkSoft, textDecoration: "none", border: `1px solid ${T.hairline2}`,
+          borderRadius: 8, padding: "10px", cursor: "pointer",
+        }}>download snippet ↓</a>
+        <div style={{ fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.6 }}>
+          Open the file, copy all, paste into a new empty chat at <a href="https://claude.ai" target="_blank" rel="noreferrer" style={{ color: T.coral }}>claude.ai</a> and hit send.
         </div>
       </div>
     </div>
