@@ -15,7 +15,15 @@ Don't want to run the standalone app? You can drop the token estimator directly 
 
 **Option 1 — Download from the app**
 
-Visit the live app and click the **snippet ↓** button in the top bar. It downloads a `claude-token-estimator-snippet.txt` file. Open it, copy everything, paste into any Claude chat.
+Visit the live app and click the **snippet ↓** button in the top bar. It downloads a `claude-token-estimator-snippet.txt` file.
+
+1. Open the file
+2. Select all (`Cmd + A`)
+3. Copy (`Cmd + C`)
+4. Go to [claude.ai](https://claude.ai) and start a **new empty chat** — this is important, it will not render in a long existing conversation
+5. Paste and hit send
+
+Claude renders the tool as an interactive artifact on the right side of the screen. No API key needed.
 
 **Option 2 — Download from GitHub**
 
