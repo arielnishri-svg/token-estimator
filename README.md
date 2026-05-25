@@ -49,8 +49,14 @@ Configure settings → Type message → Press Enter → Review cost estimate →
 | Model | Price | Best for |
 |-------|-------|----------|
 | Haiku 4.5 | $1/$5 per MTok | Short rewrites, classification, simple Q&A, high-volume tasks |
+| Sonnet 4 | $3/$15 per MTok | Coding, writing, analysis |
+| Sonnet 4.5 | $3/$15 per MTok | Coding, writing, analysis |
 | Sonnet 4.6 | $3/$15 per MTok | Coding, writing, analysis — start here for most tasks |
-| Opus 4.7 | $5/$25 per MTok | Complex reasoning, hard debugging, tasks where quality > cost |
+| Opus 4 | $5/$25 per MTok | Complex reasoning, hard debugging |
+| Opus 4.1 | $5/$25 per MTok | Complex reasoning, hard debugging |
+| Opus 4.5 | $5/$25 per MTok | Complex reasoning, hard debugging |
+| Opus 4.6 | $5/$25 per MTok | Complex reasoning, hard debugging |
+| Opus 4.7 | $5/$25 per MTok | Hardest tasks — maximum capability, quality > cost |
 
 | Thinking mode | When to use |
 |---------------|-------------|
