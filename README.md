@@ -4,7 +4,7 @@ A lightweight chat interface that **counts tokens and estimates cost before ever
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/YOUR_USERNAME/token-estimator)
 
-![screenshot placeholder](https://placehold.co/800x400/0e0e0e/fcd34d?text=Claude+Token+Estimator)
+![screenshot](screenshot.png)
 
 ## Features
 
