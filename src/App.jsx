@@ -426,6 +426,7 @@ export default function App() {
             {messages.length > 0 && <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>clear</button>}
             <button onClick={() => setShowKeyEdit(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showKeyEdit ? T.coral : T.muted, background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>api key</button>
             <a href="https://github.com/arielnishri-svg/token-estimator#readme" target="_blank" rel="noreferrer" style={{ fontFamily: T.sans, fontSize: 14, color: T.muted, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>docs ↗</a>
+            <a href="/snippet.txt" download="claude-token-estimator-snippet.txt" style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>snippet ↓</a>
           </div>
         </div>
 
@@ -469,7 +470,10 @@ export default function App() {
         {messages.length === 0 && !loading && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 80 }}>
             <div style={{ fontFamily: T.serif, fontSize: 32, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Configure · Estimate · Send</div>
-            <div style={{ fontSize: 13, color: T.muted }}>counts tokens before every burn · supports pdf, docx, images, txt</div>
+            <div style={{ fontSize: 13, color: T.muted }}>
+              counts tokens before every burn · supports pdf, docx, images, txt ·{" "}
+              <a href="https://claude.ai/new?q=Why+is+the+Anthropic+token+counting+API+free+to+use%3F+Explain+in+simple+terms." target="_blank" rel="noreferrer" style={{ color: T.coral, textDecoration: "none" }}>estimating is free ↗</a>
+            </div>
           </div>
         )}
 

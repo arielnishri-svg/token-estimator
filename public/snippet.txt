@@ -1,0 +1,311 @@
+Render this as a React artifact:
+
+import { useState, useRef, useEffect } from "react";
+
+const injectFonts = () => {
+  if (document.getElementById("cc-fonts")) return;
+  const s = document.createElement("style");
+  s.id = "cc-fonts";
+  s.textContent = `@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap');`;
+  document.head.appendChild(s);
+};
+
+const PRICING = [
+  { match: "haiku-4-5",  in: 1.00,  out: 5.00  },
+  { match: "haiku",      in: 1.00,  out: 5.00  },
+  { match: "sonnet-4-6", in: 3.00,  out: 15.00 },
+  { match: "sonnet",     in: 3.00,  out: 15.00 },
+  { match: "opus-4-7",   in: 5.00,  out: 25.00 },
+  { match: "opus-4-6",   in: 5.00,  out: 25.00 },
+  { match: "opus-4-5",   in: 5.00,  out: 25.00 },
+  { match: "sonnet-4-5", in: 3.00,  out: 15.00 },
+  { match: "opus",       in: 5.00,  out: 25.00 },
+];
+
+const CAPS = [
+  { match: "haiku-4-5",  effort: false, adaptive: false, modes: ["off","extended"] },
+  { match: "haiku",      effort: false, adaptive: false, modes: ["off","extended"] },
+  { match: "sonnet-4-6", effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
+  { match: "opus-4-7",   effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
+  { match: "opus-4-6",   effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
+  { match: "sonnet",     effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
+  { match: "opus",       effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
+];
+
+const FALLBACK_MODELS = [
+  { id: "claude-opus-4-6",           display_name: "Claude Opus 4.6"   },
+  { id: "claude-sonnet-4-6",         display_name: "Claude Sonnet 4.6" },
+  { id: "claude-haiku-4-5-20251001", display_name: "Claude Haiku 4.5"  },
+];
+
+const lookup   = (table, id) => table.find(r => id.toLowerCase().includes(r.match));
+const getPrice = (id) => lookup(PRICING, id) || { in: 3.00, out: 15.00 };
+const getCaps  = (id) => lookup(CAPS, id)    || { effort: true, adaptive: true, modes: ["off","extended","adaptive"] };
+const EFFORTS  = ["low","medium","high","max"];
+
+const T = {
+  bg0:"#181715",bg1:"#1f1e1b",bg2:"#252320",bg3:"#2e2c28",
+  hairline:"rgba(250,249,245,0.08)",hairline2:"rgba(250,249,245,0.14)",
+  coral:"#cc785c",coralDim:"rgba(204,120,92,0.15)",coralBorder:"rgba(204,120,92,0.4)",
+  onCoral:"#ffffff",onDark:"#faf9f5",onDarkSoft:"#a09d96",muted:"#6c6a64",
+  red:"#e05c5c",redBg:"rgba(224,92,92,0.12)",green:"#5db8a6",
+  serif:"'Cormorant Garamond','Times New Roman',serif",
+  sans:"'Inter',sans-serif",mono:"'JetBrains Mono',monospace",
+};
+
+const fmt      = (n) => n.toLocaleString();
+const fmtCost  = (n) => n<0.0001?"<$0.0001":n<0.001?`$${n.toFixed(4)}`:`$${n.toFixed(3)}`;
+const calcCost = (tok,rate) => (tok/1_000_000)*rate;
+const crossCost = (inTok,likelyOut,thinkFrac,modelId) => {
+  const p=getPrice(modelId);
+  const think=getCaps(modelId).modes.includes("extended")?Math.round(likelyOut*thinkFrac):0;
+  return calcCost(inTok,p.in)+calcCost(likelyOut+think,p.out);
+};
+
+function Pill({active,color="default",onClick,children,disabled}){
+  const C={coral:{bg:T.coralDim,border:T.coralBorder,text:T.coral},default:{bg:"transparent",border:T.hairline,text:T.onDarkSoft}};
+  const c=C[color]||C.default;
+  return <button onClick={onClick} disabled={disabled} style={{fontFamily:T.sans,fontSize:14,padding:"6px 13px",borderRadius:8,border:`1px solid ${active?c.border:T.hairline}`,background:active?c.bg:"transparent",color:active?c.text:T.onDarkSoft,fontWeight:active?500:400,cursor:disabled?"not-allowed":"pointer",transition:"all 0.12s",opacity:disabled?0.4:1}}>{children}</button>;
+}
+
+function Lbl({children}){
+  return <span style={{fontFamily:T.sans,fontSize:13,color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap",fontWeight:500}}>{children}</span>;
+}
+
+export default function App(){
+  useEffect(()=>{injectFonts();},[]);
+  const [models,setModels]=useState([]);
+  const [modelsLoading,setML]=useState(true);
+  const [modelId,setModelId]=useState("claude-sonnet-4-6");
+  const [mode,setMode]=useState("adaptive");
+  const [effort,setEffort]=useState("medium");
+  const [budget,setBudget]=useState(8000);
+  const [maxTok,setMaxTok]=useState(16000);
+  const [showThink,setShowThink]=useState(true);
+  const [sysPrompt,setSysPrompt]=useState("");
+  const [showSys,setShowSys]=useState(false);
+  const [messages,setMessages]=useState([]);
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [counting,setCounting]=useState(false);
+  const [error,setError]=useState(null);
+  const [total,setTotal]=useState({in:0,out:0,cost:0});
+  const [expanded,setExpanded]=useState({});
+  const [estimate,setEstimate]=useState(null);
+  const bottomRef=useRef(null);
+
+  useEffect(()=>{
+    fetch("https://api.anthropic.com/v1/models",{"Content-Type":"application/json"})
+      .then(r=>r.json()).then(data=>{
+        const list=(data.data||[]).filter(m=>m.id.startsWith("claude-"))
+          .sort((a,b)=>{const t=id=>id.includes("opus")?0:id.includes("sonnet")?1:2;const d=t(a.id)-t(b.id);return d!==0?d:b.id.localeCompare(a.id);});
+        setModels(list.length>0?list:FALLBACK_MODELS);
+        const def=list.find(m=>m.id.includes("sonnet"))||list[0];
+        if(def)setModelId(def.id);
+      }).catch(()=>setModels(FALLBACK_MODELS)).finally(()=>setML(false));
+  },[]);
+
+  const caps=getCaps(modelId);
+  const price=getPrice(modelId);
+  const safeBudget=Math.min(budget,maxTok-512);
+
+  useEffect(()=>{if(!caps.modes.includes(mode))setMode(caps.modes[0]);},[modelId]);
+  useEffect(()=>{bottomRef.current?.scrollIntoView({behavior:"smooth"});},[messages,loading]);
+  useEffect(()=>{setEstimate(null);},[input,modelId,mode,effort,budget,maxTok,sysPrompt]);
+
+  const buildBody=(history,withMax=false)=>{
+    const body={model:modelId,messages:history};
+    if(withMax)body.max_tokens=maxTok;
+    if(sysPrompt.trim())body.system=sysPrompt.trim();
+    if(mode==="extended"){body.thinking={type:"enabled",budget_tokens:safeBudget};}
+    else if(mode==="adaptive"){body.thinking={type:"adaptive"};}
+    else if(mode==="off"&&caps.effort){body.effort=effort;}
+    return body;
+  };
+
+  const getHistory=()=>[...messages.map(m=>({role:m.role,content:m.text})),{role:"user",content:input.trim()}];
+
+  const countTokens=async()=>{
+    if(!input.trim())return;
+    setCounting(true);setError(null);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages/count_tokens",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildBody(getHistory()))});
+      const data=await res.json();
+      if(data.error){setError(data.error.message);setCounting(false);return;}
+      const inputTok=data.input_tokens||0;
+      const likelyOut=Math.min(Math.round(maxTok*0.25),maxTok);
+      const minOut=Math.min(150,maxTok);
+      const thinkMax=mode==="extended"?safeBudget:mode==="adaptive"?Math.round(maxTok*0.4):0;
+      setEstimate({inputTok,minOut,likelyOut,maxOut:maxTok,thinkMax,thinkFrac:thinkMax/Math.max(maxTok,1)});
+    }catch(e){setError(e.message);}
+    setCounting(false);
+  };
+
+  const executeSend=async()=>{
+    const txt=input.trim();if(!txt||loading)return;
+    const estIn=estimate?.inputTok;
+    const history=getHistory();
+    setInput("");setEstimate(null);setError(null);
+    setMessages(prev=>[...prev,{role:"user",text:txt}]);
+    setLoading(true);
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(buildBody(history,true))});
+      const data=await res.json();
+      if(data.error){setError(data.error.message);setLoading(false);return;}
+      let thinkTxt="",respTxt="";
+      for(const blk of(data.content||[])){if(blk.type==="thinking")thinkTxt+=(blk.thinking||blk.summary||"");else if(blk.type==="text")respTxt+=blk.text;}
+      const u=data.usage||{};
+      const inTok=u.input_tokens||0,outTok=u.output_tokens||0;
+      const cost=calcCost(inTok,price.in)+calcCost(outTok,price.out);
+      setTotal(p=>({in:p.in+inTok,out:p.out+outTok,cost:p.cost+cost}));
+      setMessages(prev=>[...prev,{role:"assistant",text:respTxt,thinking:thinkTxt,usage:{in:inTok,out:outTok,cr:u.cache_read_input_tokens||0,cost},meta:{mode,effort:mode!=="off"?effort:null,budget:mode==="extended"?safeBudget:null},estimatedIn:estIn}]);
+    }catch(e){setError(e.message);}
+    setLoading(false);
+  };
+
+  const onKey=e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();estimate?executeSend():countTokens();}};
+  const clear=()=>{setMessages([]);setTotal({in:0,out:0,cost:0});setExpanded({});setError(null);setEstimate(null);};
+  const estLikely=estimate?calcCost(estimate.inputTok,price.in)+calcCost(estimate.likelyOut+estimate.thinkMax*0.3,price.out):0;
+  const estMax=estimate?calcCost(estimate.inputTok,price.in)+calcCost(estimate.maxOut+estimate.thinkMax,price.out):0;
+  const modelLabel=(m)=>{const p=getPrice(m.id);return `${m.display_name||m.id}  ·  $${p.in}/$${p.out}`;};
+
+  return(
+    <div style={{fontFamily:T.sans,display:"flex",flexDirection:"column",height:700,background:T.bg0,color:T.onDark,borderRadius:8,overflow:"hidden",border:`1px solid ${T.hairline2}`}}>
+      <div style={{background:T.bg1,borderBottom:`1px solid ${T.hairline}`,padding:"13px 20px",flexShrink:0}}>
+        <div style={{display:"flex",gap:14,alignItems:"center",flexWrap:"wrap",marginBottom:11}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Lbl>Model</Lbl>
+            {modelsLoading?<span style={{fontSize:12,color:T.muted}}>loading...</span>:
+            <select value={modelId} onChange={e=>setModelId(e.target.value)} style={{fontFamily:T.sans,fontSize:15,background:T.bg3,color:T.onDark,border:`1px solid ${T.hairline2}`,borderRadius:8,padding:"6px 11px",maxWidth:300}}>
+              {models.map(m=><option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
+            </select>}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Lbl>Think</Lbl>
+            <div style={{display:"flex",gap:4}}>{caps.modes.map(m=><Pill key={m} active={mode===m} color="coral" onClick={()=>setMode(m)}>{m}</Pill>)}</div>
+          </div>
+          {(mode==="adaptive"||(mode==="off"&&caps.effort))&&(
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <Lbl>Effort</Lbl>
+              <div style={{display:"flex",gap:4}}>{EFFORTS.map(e=><Pill key={e} active={effort===e} color="coral" onClick={()=>setEffort(e)}>{e}</Pill>)}</div>
+            </div>
+          )}
+          <div style={{marginLeft:"auto",display:"flex",gap:10,alignItems:"center"}}>
+            {total.in>0&&<><span style={{fontFamily:T.mono,fontSize:14,color:T.onDarkSoft}}>{fmt(total.in)}down {fmt(total.out)}up</span><span style={{fontFamily:T.mono,fontSize:15,color:T.coral,background:T.coralDim,border:`1px solid ${T.coralBorder}`,borderRadius:8,padding:"4px 12px",fontWeight:500}}>{fmtCost(total.cost)}</span></>}
+            {messages.length>0&&<button onClick={clear} style={{fontFamily:T.sans,fontSize:14,color:T.onDarkSoft,background:"transparent",border:`1px solid ${T.hairline}`,borderRadius:8,padding:"5px 14px",cursor:"pointer"}}>clear</button>}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:18,alignItems:"center",flexWrap:"wrap"}}>
+          {mode==="extended"&&(
+            <div style={{display:"flex",gap:9,alignItems:"center",flex:1,minWidth:160}}>
+              <Lbl>Think budget</Lbl>
+              <input type="range" min={1024} max={Math.min(32000,maxTok-512)} step={512} value={budget} onChange={e=>setBudget(Number(e.target.value))} style={{flex:1,accentColor:T.coral}}/>
+              <span style={{fontFamily:T.mono,fontSize:15,color:budget>=maxTok-512?T.red:T.coral,minWidth:52,textAlign:"right"}}>{fmt(budget)}</span>
+            </div>
+          )}
+          <div style={{display:"flex",gap:9,alignItems:"center"}}>
+            <Lbl>Max out</Lbl>
+            <input type="range" min={1024} max={32000} step={512} value={maxTok} onChange={e=>setMaxTok(Number(e.target.value))} style={{width:90,accentColor:T.coral}}/>
+            <span style={{fontFamily:T.mono,fontSize:15,color:T.onDark,minWidth:52,textAlign:"right"}}>{fmt(maxTok)}</span>
+          </div>
+          {mode!=="off"&&(
+            <label style={{display:"flex",gap:7,alignItems:"center",fontFamily:T.sans,fontSize:15,color:T.onDarkSoft,cursor:"pointer"}}>
+              <input type="checkbox" checked={showThink} onChange={e=>setShowThink(e.target.checked)} style={{accentColor:T.coral}}/> show thinking
+            </label>
+          )}
+          <button onClick={()=>setShowSys(s=>!s)} style={{fontFamily:T.sans,fontSize:14,color:showSys?T.coral:T.onDarkSoft,background:"transparent",border:`1px solid ${showSys?T.coralBorder:T.hairline}`,borderRadius:8,padding:"5px 14px",cursor:"pointer"}}>sys prompt</button>
+        </div>
+        {showSys&&<textarea value={sysPrompt} onChange={e=>setSysPrompt(e.target.value)} placeholder="System prompt..." style={{width:"100%",marginTop:10,fontFamily:T.sans,fontSize:13,padding:"9px 12px",minHeight:54,resize:"vertical",background:T.bg0,color:T.onDark,border:`1px solid ${T.hairline2}`,borderRadius:8,boxSizing:"border-box"}}/>}
+      </div>
+
+      <div style={{flex:1,overflowY:"auto",padding:"20px 20px 10px",display:"flex",flexDirection:"column",gap:18}}>
+        {messages.length===0&&!loading&&(
+          <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:8,paddingTop:80}}>
+            <div style={{fontFamily:T.serif,fontSize:32,fontWeight:400,color:T.onDark,letterSpacing:"-0.5px"}}>Configure - Estimate - Send</div>
+            <div style={{fontSize:13,color:T.muted}}>counts tokens before every burn</div>
+          </div>
+        )}
+        {messages.map((msg,i)=>(
+          <div key={i}>
+            {msg.role==="assistant"&&msg.thinking&&showThink&&(
+              <div style={{marginBottom:8}}>
+                <button onClick={()=>setExpanded(p=>({...p,[i]:!p[i]}))} style={{display:"flex",alignItems:"center",gap:6,fontFamily:T.sans,fontSize:11,fontWeight:500,color:T.muted,background:"transparent",border:"none",cursor:"pointer",padding:"2px 0",textTransform:"uppercase",letterSpacing:"0.08em"}}>
+                  <span style={{fontSize:9}}>{expanded[i]?"v":">"}</span> Thinking
+                </button>
+                {expanded[i]&&<div style={{fontFamily:T.mono,fontSize:13,whiteSpace:"pre-wrap",lineHeight:1.65,maxHeight:170,overflowY:"auto",padding:"12px 14px",background:T.bg2,border:`1px solid ${T.hairline}`,borderRadius:8,color:T.onDarkSoft,marginTop:5}}>{msg.thinking}</div>}
+              </div>
+            )}
+            <div style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start"}}>
+              <div style={{maxWidth:"80%",padding:"12px 16px",borderRadius:msg.role==="user"?"12px 12px 2px 12px":"2px 12px 12px 12px",background:msg.role==="user"?T.bg2:T.bg1,border:`1px solid ${msg.role==="user"?T.hairline2:T.hairline}`,fontFamily:T.sans,fontSize:16,lineHeight:1.7,color:T.onDark,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{msg.text}</div>
+            </div>
+            {msg.role==="assistant"&&msg.usage&&(
+              <div style={{display:"flex",gap:10,marginTop:7,alignItems:"center",flexWrap:"wrap",paddingLeft:2}}>
+                <span style={{fontFamily:T.mono,fontSize:12,color:T.onDarkSoft}}>down{fmt(msg.usage.in)} up{fmt(msg.usage.out)}{msg.usage.cr>0?` cache:${fmt(msg.usage.cr)}`:""}</span>
+                <span style={{fontFamily:T.mono,fontSize:13,color:T.coral,fontWeight:500}}>{fmtCost(msg.usage.cost)}</span>
+                {msg.estimatedIn&&<span style={{fontFamily:T.mono,fontSize:12,color:Math.abs(msg.usage.in-msg.estimatedIn)>msg.estimatedIn*0.1?T.red:T.green}}>est {fmt(msg.estimatedIn)} actual {fmt(msg.usage.in)} ({msg.usage.in>msg.estimatedIn?"+":""}{fmt(msg.usage.in-msg.estimatedIn)})</span>}
+                <span style={{marginLeft:"auto",fontFamily:T.mono,fontSize:11,color:T.onDarkSoft,background:T.bg2,border:`1px solid ${T.hairline}`,borderRadius:6,padding:"2px 8px"}}>{msg.meta.mode}{msg.meta.effort?`.${msg.meta.effort}`:""}{msg.meta.budget?`.${fmt(msg.meta.budget)}tok`:""}</span>
+              </div>
+            )}
+          </div>
+        ))}
+        {loading&&<div style={{display:"flex"}}><div style={{fontFamily:T.sans,fontSize:14,color:T.coral,padding:"11px 16px",background:T.coralDim,border:`1px solid ${T.coralBorder}`,borderRadius:10}}>burning tokens...</div></div>}
+        {error&&<div style={{fontFamily:T.mono,fontSize:13,color:T.red,padding:"10px 14px",background:T.redBg,border:`1px solid ${T.red}`,borderRadius:8}}>{error}</div>}
+        <div ref={bottomRef}/>
+      </div>
+
+      {estimate&&(
+        <div style={{margin:"0 16px 0",background:T.bg1,border:`1px solid ${T.coralBorder}`,borderRadius:"10px 10px 0 0",padding:"16px 20px",borderBottom:"none"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <span style={{fontFamily:T.serif,fontSize:20,fontWeight:400,color:T.onDark,letterSpacing:"-0.3px"}}>Cost estimate - confirm to send</span>
+            <span style={{fontFamily:T.mono,fontSize:12,color:T.onDarkSoft}}>input: {fmt(estimate.inputTok)} tokens (exact)</span>
+          </div>
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:11,fontWeight:500,color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>cost by model - same message</div>
+            <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(models.length,4)},1fr)`,gap:8}}>
+              {models.map(m=>{
+                const likely=crossCost(estimate.inputTok,estimate.likelyOut,estimate.thinkFrac,m.id);
+                const max=crossCost(estimate.inputTok,estimate.maxOut,estimate.thinkFrac*1.5,m.id);
+                const active=m.id===modelId;const p=getPrice(m.id);
+                const name=(m.display_name||m.id).replace("Claude ","");
+                return(<div key={m.id} onClick={()=>setModelId(m.id)} style={{padding:"10px 12px",borderRadius:8,cursor:"pointer",background:active?T.coralDim:T.bg2,border:`1px solid ${active?T.coralBorder:T.hairline2}`,transition:"all 0.12s"}}>
+                  <div style={{fontFamily:T.sans,fontSize:12,color:active?T.coral:T.onDarkSoft,marginBottom:3,fontWeight:active?500:400}}>{name}{active?" v":""}</div>
+                  <div style={{fontFamily:T.serif,fontSize:20,color:active?T.coral:T.onDark}}>{fmtCost(likely)}</div>
+                  <div style={{fontSize:11,color:T.muted,marginTop:2}}>up to {fmtCost(max)}</div>
+                  <div style={{fontSize:11,color:T.muted,marginTop:1}}>${p.in}/${p.out}/MTok</div>
+                </div>);
+              })}
+            </div>
+            <div style={{fontSize:11,color:T.muted,marginTop:6}}>click a card to switch model before sending</div>
+          </div>
+          <div style={{borderTop:`1px solid ${T.hairline}`,paddingTop:12,marginBottom:12}}>
+            <div style={{fontSize:11,fontWeight:500,color:T.muted,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{(models.find(m=>m.id===modelId)?.display_name||modelId).replace("Claude ","")} breakdown</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"8px 18px"}}>
+              {[
+                {label:"Input",val:fmtCost(calcCost(estimate.inputTok,price.in)),note:`${fmt(estimate.inputTok)} tok`},
+                {label:"Out (min)",val:fmtCost(calcCost(estimate.minOut,price.out)),note:`~${fmt(estimate.minOut)} tok`},
+                {label:"Out (likely)",val:fmtCost(calcCost(estimate.likelyOut,price.out)),note:`~${fmt(estimate.likelyOut)} tok`},
+                estimate.thinkMax>0?{label:"Think (max)",val:fmtCost(calcCost(estimate.thinkMax,price.out)),note:`<=${fmt(estimate.thinkMax)} tok`}:{label:"Out (max)",val:fmtCost(calcCost(estimate.maxOut,price.out)),note:`${fmt(estimate.maxOut)} tok`},
+              ].map(({label,val,note})=>(<div key={label}><div style={{fontSize:11,color:T.muted,marginBottom:3}}>{label}</div><div style={{fontFamily:T.serif,fontSize:18,color:T.onDark}}>{val}</div><div style={{fontFamily:T.mono,fontSize:11,color:T.onDarkSoft,marginTop:2}}>{note}</div></div>))}
+            </div>
+            <div style={{marginTop:12,display:"flex",gap:16,alignItems:"baseline"}}>
+              <span style={{fontSize:13,color:T.onDarkSoft}}>Likely total:</span>
+              <span style={{fontFamily:T.serif,fontSize:26,color:T.coral}}>{fmtCost(estLikely)}</span>
+              <span style={{fontSize:12,color:T.muted}}>ceiling: {fmtCost(estMax)}</span>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={()=>setEstimate(null)} style={{fontFamily:T.sans,fontSize:13,padding:"8px 20px",borderRadius:8,border:`1px solid ${T.hairline2}`,background:"transparent",color:T.onDarkSoft,cursor:"pointer"}}>cancel</button>
+            <button onClick={executeSend} style={{fontFamily:T.sans,fontSize:13,fontWeight:500,padding:"8px 24px",borderRadius:8,border:"none",background:T.coral,color:T.onCoral,cursor:"pointer"}}>send it</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{borderTop:`1px solid ${T.hairline}`,margin:estimate?"0 16px 16px":0,border:estimate?`1px solid ${T.coralBorder}`:undefined,borderRadius:estimate?"0 0 10px 10px":0,padding:"13px 20px",display:"flex",gap:8,alignItems:"flex-end",background:T.bg1,flexShrink:0}}>
+        <textarea value={input} onChange={e=>setInput(e.target.value)} onKeyDown={onKey} disabled={loading||counting}
+          placeholder={estimate?"edit message to reset estimate...":"message... enter to estimate then send"}
+          rows={1} style={{flex:1,resize:"none",fontFamily:T.sans,fontSize:16,padding:"10px 13px",borderRadius:8,border:`1px solid ${T.hairline2}`,background:T.bg0,color:T.onDark,lineHeight:1.6,minHeight:42}}/>
+        {!estimate&&<button onClick={countTokens} disabled={loading||counting||!input.trim()} style={{fontFamily:T.sans,fontSize:15,fontWeight:500,padding:"10px 22px",height:44,flexShrink:0,borderRadius:8,border:"none",background:T.coral,color:T.onCoral,cursor:(loading||counting||!input.trim())?"not-allowed":"pointer",transition:"all 0.12s",opacity:(loading||counting||!input.trim())?0.4:1}}>{counting?"counting...":"estimate"}</button>}
+      </div>
+    </div>
+  );
+}

@@ -9,6 +9,26 @@ A chat interface that **counts tokens and estimates cost before every API call**
 
 ---
 
+## Use in any Claude chat (no API key needed)
+
+Don't want to run the standalone app? You can drop the token estimator directly into any Claude chat as an artifact — no API key required since claude.ai handles auth.
+
+**Option 1 — Download from the app**
+
+Visit the live app and click the **snippet ↓** button in the top bar. It downloads a `claude-token-estimator-snippet.txt` file. Open it, copy everything, paste into any Claude chat.
+
+**Option 2 — Download from GitHub**
+
+Download [`public/snippet.txt`](https://github.com/arielnishri-svg/token-estimator/blob/main/public/snippet.txt) directly from this repo, copy the contents, and paste into any Claude chat.
+
+**Option 3 — Text expander**
+
+Save the snippet to [Raycast](https://raycast.com), Espanso, or Alfred. Set a keyword like `;;estimator` and it pastes the full prompt anywhere — no opening files needed.
+
+> Note: The in-chat version does not support file attachments. All other features (token counting, cost estimation, model switching, thinking modes) work the same.
+
+---
+
 ## Why this exists
 
 claude.ai hides token counts and costs from you. This tool exposes everything: exact input tokens, estimated output cost, and a side-by-side model comparison — all before you commit to a single API call.
