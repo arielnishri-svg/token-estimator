@@ -4,7 +4,7 @@ A chat interface that **counts tokens and estimates cost before every API call**
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/arielnishri-svg/token-estimator)
 
-![screenshot](screenshot.png)
+![screenshot](screenshot1.png)
 
 ---
 
