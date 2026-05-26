@@ -31,9 +31,20 @@ const CAPS = [
 ];
 
 const FALLBACK_MODELS = [
-  { id: "claude-opus-4-6",           display_name: "Claude Opus 4.6"   },
-  { id: "claude-sonnet-4-6",         display_name: "Claude Sonnet 4.6" },
-  { id: "claude-haiku-4-5-20251001", display_name: "Claude Haiku 4.5"  },
+  { id: "claude-opus-4-7-20250514",      display_name: "Claude Opus 4.7"   },
+  { id: "claude-opus-4-6",               display_name: "Claude Opus 4.6"   },
+  { id: "claude-3-opus-20240229",        display_name: "Claude Opus 3"     },
+  { id: "claude-sonnet-4-6",             display_name: "Claude Sonnet 4.6" },
+  { id: "claude-sonnet-4-5-20251001",    display_name: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4-5-20251001",     display_name: "Claude Haiku 4.5"  },
+];
+
+// Models shown in the UI — only Claude.ai-visible models
+// To restore full list remove this filter in loadModels
+const ALLOWED_MODEL_FRAGMENTS = [
+  "opus-4-7", "opus-4-6", "opus-3", "claude-3-opus",
+  "sonnet-4-6", "sonnet-4-5",
+  "haiku-4-5",
 ];
 
 const LS_KEY         = "claude_estimator_api_key";
@@ -581,10 +592,11 @@ export default function App() {
     fetch("https://api.anthropic.com/v1/models", { headers: apiHeaders(key) })
       .then(r => r.json())
       .then(data => {
-        const list = (data.data || []).filter(m => m.id.startsWith("claude-"))
+        const list = (data.data || [])
+          .filter(m => m.id.startsWith("claude-") && ALLOWED_MODEL_FRAGMENTS.some(f => m.id.toLowerCase().includes(f)))
           .sort((a, b) => { const tier = id => id.includes("opus")?0:id.includes("sonnet")?1:2; const td=tier(a.id)-tier(b.id); return td!==0?td:b.id.localeCompare(a.id); });
         setModels(list.length > 0 ? list : FALLBACK_MODELS);
-        const def = list.find(m => m.id.includes("sonnet")) || list[0];
+        const def = list.find(m => m.id.includes("sonnet-4-6")) || list.find(m => m.id.includes("sonnet")) || list[0];
         if (def) setModelId(def.id);
       })
       .catch(() => setModels(FALLBACK_MODELS))
@@ -856,7 +868,7 @@ export default function App() {
       <ContextBar sysTokens={ctxTokens.sys} historyTokens={ctxTokens.history} lastTokens={ctxTokens.last} />
 
       {/* MESSAGES */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 10px", display: "flex", flexDirection: "column", gap: 18, background: T.bg0 }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "20px 20px 10px", display: "flex", flexDirection: "column", gap: 18, background: T.bg0 }}>
         {messages.length === 0 && !loading && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 60 }}>
             <div style={{ fontFamily: T.serif, fontSize: 36, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Configure · Estimate · Send</div>
