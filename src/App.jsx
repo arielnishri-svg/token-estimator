@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 
 const injectFonts = () => {
   if (document.getElementById("cc-fonts")) return;
@@ -36,7 +36,8 @@ const FALLBACK_MODELS = [
   { id: "claude-haiku-4-5-20251001", display_name: "Claude Haiku 4.5"  },
 ];
 
-const LS_KEY = "claude_estimator_api_key";
+const LS_KEY         = "claude_estimator_api_key";
+const CTX_WINDOW     = 200000;
 
 const lookup   = (table, id) => table.find(r => id.toLowerCase().includes(r.match));
 const getPrice = (id) => lookup(PRICING, id) || { in: 3.00, out: 15.00 };
@@ -50,6 +51,7 @@ const T = {
   coral: "#cc785c", coralDim: "rgba(204,120,92,0.15)", coralBorder: "rgba(204,120,92,0.4)",
   onCoral: "#ffffff", onDark: "#faf9f5", onDarkSoft: "#a09d96", muted: "#6c6a64",
   red: "#e05c5c", redBg: "rgba(224,92,92,0.12)", green: "#5db8a6",
+  blue: "#93c5fd",
   serif: "'Cormorant Garamond', 'Times New Roman', serif",
   sans: "'Inter', sans-serif", mono: "'JetBrains Mono', monospace",
 };
@@ -90,7 +92,6 @@ const readAsText = (file) => new Promise((res, rej) => {
 const IMAGE_TYPES = ["image/png","image/jpeg","image/webp","image/gif"];
 const DOCX_TYPES  = ["application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/msword"];
 
-// Load mammoth lazily for docx parsing
 let mammothLoaded = false;
 const loadMammoth = () => new Promise((res) => {
   if (window.mammoth) { res(window.mammoth); return; }
@@ -117,29 +118,56 @@ const processFile = async (file) => {
     const result = await mammoth.extractRawText({ arrayBuffer: ab });
     return { type: "text", text: result.value, name: file.name, size: file.size };
   }
-  // txt and anything else
   const text = await readAsText(file);
   return { type: "text", text, name: file.name, size: file.size };
 };
 
 const attachmentToContentBlock = (att) => {
-  if (att.type === "image") {
-    return { type: "image", source: { type: "base64", media_type: att.mediaType, data: att.data } };
-  }
-  if (att.type === "pdf") {
-    return { type: "document", source: { type: "base64", media_type: "application/pdf", data: att.data } };
-  }
-  // text (docx extracted / txt)
+  if (att.type === "image") return { type: "image", source: { type: "base64", media_type: att.mediaType, data: att.data } };
+  if (att.type === "pdf")   return { type: "document", source: { type: "base64", media_type: "application/pdf", data: att.data } };
   return { type: "text", text: `[File: ${att.name}]\n\n${att.text}` };
 };
 
 const fmtSize = (b) => b < 1024 ? `${b}B` : b < 1048576 ? `${(b/1024).toFixed(1)}KB` : `${(b/1048576).toFixed(1)}MB`;
 
+// ── Prompt optimizer helper ───────────────────────────────────────────────────
+const optimizePrompt = async (text, apiKey) => {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", headers: apiHeaders(apiKey),
+    body: JSON.stringify({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1024,
+      system: "You are a prompt optimization expert. Rewrite the given prompt to use fewer tokens while preserving all meaning and intent. Return ONLY the optimized prompt text, no explanation.",
+      messages: [{ role: "user", content: `Optimize this prompt to use fewer tokens:\n\n${text}` }],
+    }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.content?.[0]?.text || text;
+};
+
+// ── Model router helper ───────────────────────────────────────────────────────
+const MODEL_TIERS = [
+  { label: "Haiku",  match: "haiku",  color: T.green },
+  { label: "Sonnet", match: "sonnet", color: T.coral },
+  { label: "Opus",   match: "opus",   color: T.blue  },
+];
+
+const classifyComplexity = (text) => {
+  const words = text.split(/\s+/).length;
+  const hasCode   = /```|function|class |import |const |def |SELECT |FROM /i.test(text);
+  const hasAnalysis = /analyze|compare|explain|evaluate|critique|strategy|architecture/i.test(text);
+  const hasSimple = words < 30 && !hasCode && !hasAnalysis;
+  if (hasSimple) return "haiku";
+  if (hasCode || hasAnalysis || words > 200) return "opus";
+  return "sonnet";
+};
+
 // ── Components ────────────────────────────────────────────────────────────────
 function Pill({ active, color = "default", onClick, children, disabled }) {
   const colors = {
-    coral:   { bg: T.coralDim,     border: T.coralBorder, text: T.coral     },
-    default: { bg: "transparent",  border: T.hairline,    text: T.onDarkSoft },
+    coral:   { bg: T.coralDim,    border: T.coralBorder, text: T.coral     },
+    default: { bg: "transparent", border: T.hairline,    text: T.onDarkSoft },
   };
   const c = colors[color] || colors.default;
   return (
@@ -156,29 +184,235 @@ function Pill({ active, color = "default", onClick, children, disabled }) {
 }
 
 function Lbl({ children }) {
-  return (
-    <span style={{ fontFamily: T.sans, fontSize: 13, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: 500 }}>
-      {children}
-    </span>
-  );
+  return <span style={{ fontFamily: T.sans, fontSize: 13, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap", fontWeight: 500 }}>{children}</span>;
+}
+
+function Badge({ children }) {
+  return <span style={{ fontSize: 10, background: T.coralDim, color: T.coral, border: `1px solid ${T.coralBorder}`, borderRadius: 4, padding: "1px 5px", fontWeight: 500, letterSpacing: "0.04em", verticalAlign: "middle", marginLeft: 4 }}>{children}</span>;
 }
 
 function AttachmentChip({ att, onRemove }) {
   const icons = { image: "🖼", pdf: "📄", text: "📝" };
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6,
-      background: T.bg2, border: `1px solid ${T.hairline2}`,
-      borderRadius: 6, padding: "4px 8px", fontSize: 12, color: T.onDarkSoft,
-      fontFamily: T.sans, maxWidth: 200,
-    }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 6, background: T.bg2, border: `1px solid ${T.hairline2}`, borderRadius: 6, padding: "4px 8px", fontSize: 12, color: T.onDarkSoft, fontFamily: T.sans, maxWidth: 200 }}>
       <span>{icons[att.type] || "📎"}</span>
       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{att.name}</span>
       <span style={{ color: T.muted, fontSize: 11, flexShrink: 0 }}>{fmtSize(att.size)}</span>
-      <button onClick={onRemove} style={{
-        background: "none", border: "none", cursor: "pointer", color: T.muted,
-        fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0,
-      }}>×</button>
+      <button onClick={onRemove} style={{ background: "none", border: "none", cursor: "pointer", color: T.muted, fontSize: 14, lineHeight: 1, padding: "0 2px", flexShrink: 0 }}>×</button>
+    </div>
+  );
+}
+
+// ── Context Window Bar ────────────────────────────────────────────────────────
+function ContextBar({ sysTokens, historyTokens, lastTokens }) {
+  const total = sysTokens + historyTokens + lastTokens;
+  const pct   = (total / CTX_WINDOW) * 100;
+  const sysPct  = (sysTokens / CTX_WINDOW) * 100;
+  const hisPct  = (historyTokens / CTX_WINDOW) * 100;
+  const lastPct = (lastTokens / CTX_WINDOW) * 100;
+  const barColor = pct > 80 ? T.red : pct > 50 ? "#e8a55a" : T.green;
+
+  return (
+    <div style={{ background: T.bg1, borderBottom: `1px solid ${T.hairline}`, padding: "8px 20px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+        <span style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          Context window <Badge>new</Badge>
+        </span>
+        <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>
+          {fmt(total)} / {fmt(CTX_WINDOW)}
+          <span style={{ color: pct > 80 ? T.red : T.green, marginLeft: 6 }}>{pct.toFixed(1)}% used</span>
+        </span>
+      </div>
+      <div style={{ height: 5, background: T.hairline, borderRadius: 99, overflow: "hidden", display: "flex", gap: 1 }}>
+        {sysPct > 0  && <div style={{ width: `${sysPct}%`,  background: T.coral, borderRadius: 2 }} />}
+        {hisPct > 0  && <div style={{ width: `${hisPct}%`,  background: T.green, borderRadius: 2 }} />}
+        {lastPct > 0 && <div style={{ width: `${lastPct}%`, background: T.blue,  borderRadius: 2 }} />}
+      </div>
+      <div style={{ display: "flex", gap: 14, marginTop: 5 }}>
+        {[
+          { color: T.coral, label: `sys prompt ${fmt(sysTokens)}` },
+          { color: T.green, label: `history ${fmt(historyTokens)}` },
+          { color: T.blue,  label: `last msg ${fmt(lastTokens)}` },
+          { color: T.hairline2, label: `available ${fmt(CTX_WINDOW - total)}` },
+        ].map(({ color, label }) => (
+          <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: T.muted }}>{label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Feature Panels ────────────────────────────────────────────────────────────
+function CostProjector({ perMsgCost, models, lastMsgTokens }) {
+  const [calls, setCalls] = useState(10000);
+  const monthly = perMsgCost * calls;
+  const yearly  = monthly * 12;
+  const haikuId = models.find(m => m.id.toLowerCase().includes("haiku"))?.id || "";
+  const haikuCost = haikuId ? calcCost(lastMsgTokens, getPrice(haikuId).in) * calls : 0;
+  const saving = monthly - haikuCost;
+
+  return (
+    <div style={{ background: T.bg1, border: `1px solid ${T.hairline}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        Cost projector <Badge>new</Badge>
+      </div>
+      <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>
+        Per message: <span style={{ color: T.onDark }}>{fmtCost(perMsgCost)}</span>
+      </div>
+      <input type="range" min={100} max={100000} step={100} value={calls}
+        onChange={e => setCalls(Number(e.target.value))}
+        style={{ width: "100%", accentColor: T.coral, marginBottom: 4 }} />
+      <div style={{ fontSize: 11, color: T.muted, marginBottom: 8 }}>{fmt(calls)} calls/mo</div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+        <div style={{ background: T.bg2, borderRadius: 6, padding: 8 }}>
+          <div style={{ fontSize: 10, color: T.muted, marginBottom: 2 }}>Monthly</div>
+          <div style={{ fontFamily: T.serif, fontSize: 20, color: T.onDark }}>{fmtCost(monthly)}</div>
+        </div>
+        <div style={{ background: T.bg2, borderRadius: 6, padding: 8 }}>
+          <div style={{ fontSize: 10, color: T.muted, marginBottom: 2 }}>Yearly</div>
+          <div style={{ fontFamily: T.serif, fontSize: 20, color: yearly > 100 ? T.red : T.onDark }}>{fmtCost(yearly)}</div>
+        </div>
+      </div>
+      {haikuCost > 0 && saving > 0 && (
+        <div style={{ fontSize: 11, color: T.green, marginTop: 8 }}>
+          on Haiku: {fmtCost(haikuCost)}/mo · save {fmtCost(saving)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PromptOptimizer({ sysPrompt, setSysPrompt, apiKey }) {
+  const [optimized, setOptimized]   = useState(null);
+  const [origTokens, setOrigTokens] = useState(0);
+  const [optTokens, setOptTokens]   = useState(0);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState(null);
+
+  const estimate = (text) => Math.ceil(text.split(/\s+/).length * 1.3);
+
+  const run = async () => {
+    if (!sysPrompt.trim()) { setError("Add a system prompt first — click sys prompt above."); return; }
+    setLoading(true); setError(null);
+    try {
+      const result = await optimizePrompt(sysPrompt, apiKey);
+      setOptimized(result);
+      setOrigTokens(estimate(sysPrompt));
+      setOptTokens(estimate(result));
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
+
+  const apply = () => { setSysPrompt(optimized); setOptimized(null); };
+  const saved = origTokens - optTokens;
+  const savedPct = origTokens > 0 ? Math.round((saved / origTokens) * 100) : 0;
+
+  return (
+    <div style={{ background: T.bg1, border: `1px solid ${T.hairline}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        Prompt optimizer <Badge>new</Badge>
+      </div>
+
+      {!optimized && !loading && (
+        <>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 10, lineHeight: 1.5 }}>
+            {sysPrompt.trim()
+              ? `System prompt: ~${estimate(sysPrompt)} tokens. Click to optimize.`
+              : "Add a system prompt (click sys prompt above) to optimize it."}
+          </div>
+          {error && <div style={{ fontSize: 11, color: T.red, marginBottom: 8 }}>{error}</div>}
+          <button onClick={run} disabled={!sysPrompt.trim()} style={{
+            width: "100%", fontFamily: T.sans, fontSize: 12, fontWeight: 500,
+            background: T.coralDim, border: `1px solid ${T.coralBorder}`, color: T.coral,
+            borderRadius: 6, padding: "7px", cursor: sysPrompt.trim() ? "pointer" : "not-allowed",
+            opacity: sysPrompt.trim() ? 1 : 0.4,
+          }}>optimize →</button>
+        </>
+      )}
+
+      {loading && <div style={{ fontSize: 12, color: T.muted }}>optimizing with Haiku…</div>}
+
+      {optimized && (
+        <>
+          <div style={{ background: "rgba(224,92,92,0.08)", border: "1px solid rgba(224,92,92,0.2)", borderRadius: 6, padding: "7px 9px", fontSize: 12, color: T.onDarkSoft, marginBottom: 5, lineHeight: 1.5 }}>
+            <span style={{ fontSize: 10, color: T.red, display: "block", marginBottom: 3 }}>BEFORE · ~{origTokens} tokens</span>
+            {sysPrompt.slice(0, 120)}{sysPrompt.length > 120 ? "…" : ""}
+          </div>
+          <div style={{ background: "rgba(93,184,166,0.08)", border: "1px solid rgba(93,184,166,0.2)", borderRadius: 6, padding: "7px 9px", fontSize: 12, color: T.onDarkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+            <span style={{ fontSize: 10, color: T.green, display: "block", marginBottom: 3 }}>AFTER · ~{optTokens} tokens</span>
+            {optimized.slice(0, 120)}{optimized.length > 120 ? "…" : ""}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 11, color: T.green }}>saved ~{saved} tokens ({savedPct}%)</span>
+            <div style={{ display: "flex", gap: 5 }}>
+              <button onClick={() => setOptimized(null)} style={{ fontSize: 11, background: "transparent", border: `1px solid ${T.hairline2}`, color: T.muted, borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>discard</button>
+              <button onClick={apply} style={{ fontSize: 11, background: T.coralDim, border: `1px solid ${T.coralBorder}`, color: T.coral, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 500 }}>apply →</button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ModelRouter({ messages, modelId, setModelId }) {
+  const analysis = useMemo(() => {
+    if (messages.length === 0) return null;
+    const recent = messages.filter(m => m.role === "user").slice(-10);
+    if (recent.length === 0) return null;
+    const counts = { haiku: 0, sonnet: 0, opus: 0 };
+    recent.forEach(m => { const tier = classifyComplexity(m.text || ""); counts[tier]++; });
+    const total = recent.length;
+    return {
+      haiku:  Math.round((counts.haiku  / total) * 100),
+      sonnet: Math.round((counts.sonnet / total) * 100),
+      opus:   Math.round((counts.opus   / total) * 100),
+      suggested: counts.haiku >= counts.sonnet && counts.haiku >= counts.opus ? "haiku"
+               : counts.opus  >= counts.sonnet ? "opus" : "sonnet",
+      total,
+    };
+  }, [messages]);
+
+  const tiers = [
+    { key: "haiku",  label: "Haiku",  color: T.green },
+    { key: "sonnet", label: "Sonnet", color: T.coral },
+    { key: "opus",   label: "Opus",   color: T.blue  },
+  ];
+
+  return (
+    <div style={{ background: T.bg1, border: `1px solid ${T.hairline}`, borderRadius: 10, padding: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+        Model router <Badge>new</Badge>
+      </div>
+
+      {!analysis ? (
+        <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>Send a few messages to get routing suggestions based on query complexity.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: T.muted, marginBottom: 8 }}>Based on last {analysis.total} messages</div>
+          {tiers.map(({ key, label, color }) => (
+            <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span style={{ fontSize: 12, color: T.onDarkSoft, minWidth: 48 }}>{label}</span>
+              <div style={{ flex: 1, background: T.hairline, borderRadius: 99, height: 5, overflow: "hidden" }}>
+                <div style={{ width: `${analysis[key]}%`, height: "100%", background: color, borderRadius: 99 }} />
+              </div>
+              <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDark, minWidth: 32, textAlign: "right" }}>{analysis[key]}%</span>
+            </div>
+          ))}
+          {analysis.suggested && (
+            <div style={{ fontSize: 11, color: T.green, border: "1px solid rgba(93,184,166,0.3)", borderRadius: 5, padding: "5px 8px", marginTop: 6, lineHeight: 1.5 }}>
+              {analysis.haiku >= 60
+                ? `${analysis.haiku}% of queries could use Haiku — cheaper & faster`
+                : analysis.opus >= 40
+                ? `${analysis.opus}% of queries need Opus-level reasoning`
+                : "Sonnet is a good fit for your current usage mix"}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -221,20 +455,16 @@ function ApiKeyScreen({ onSave }) {
           {testing ? "verifying…" : "save & connect →"}
         </button>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 14, lineHeight: 1.7 }}>
-          Your key is stored only in your browser’s localStorage. It is never sent anywhere except directly to api.anthropic.com.
+          Your key is stored only in your browser's localStorage. It is never sent anywhere except directly to api.anthropic.com.
           Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{ color: T.coral }}>console.anthropic.com</a>.
         </div>
       </div>
 
       <div style={{ width: "100%", maxWidth: 420, background: T.bg1, border: `1px solid ${T.hairline2}`, borderRadius: 12, padding: 24 }}>
         <div style={{ fontSize: 13, color: T.onDark, marginBottom: 10, lineHeight: 1.6 }}>
-          Don’t want to run the standalone app? You can drop the token estimator directly into any Claude chat as an artifact — no API key required since claude.ai handles auth.
+          Don't want to run the standalone app? You can drop the token estimator directly into any Claude chat as an artifact — no API key required since claude.ai handles auth.
         </div>
-        <a href="/snippet.txt" download="claude-token-estimator-snippet.txt" style={{
-          display: "block", textAlign: "center", fontFamily: T.sans, fontSize: 13, fontWeight: 500,
-          color: T.onDarkSoft, textDecoration: "none", border: `1px solid ${T.hairline2}`,
-          borderRadius: 8, padding: "10px", cursor: "pointer",
-        }}>download snippet ↓</a>
+        <a href="/snippet.txt" download="claude-token-estimator-snippet.txt" style={{ display: "block", textAlign: "center", fontFamily: T.sans, fontSize: 13, fontWeight: 500, color: T.onDarkSoft, textDecoration: "none", border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "10px", cursor: "pointer" }}>download snippet ↓</a>
         <div style={{ fontSize: 11, color: T.muted, marginTop: 10, lineHeight: 1.6 }}>
           Open the file, copy all, paste into a new empty chat at <a href="https://claude.ai" target="_blank" rel="noreferrer" style={{ color: T.coral }}>claude.ai</a> and hit send.
         </div>
@@ -269,8 +499,10 @@ export default function App() {
   const [expanded, setExpanded]       = useState({});
   const [estimate, setEstimate]       = useState(null);
   const [showKeyEdit, setShowKeyEdit] = useState(false);
-  const bottomRef  = useRef(null);
-  const fileRef    = useRef(null);
+  const [showPanels, setShowPanels]   = useState(true);
+  const [ctxTokens, setCtxTokens]     = useState({ sys: 0, history: 0, last: 0 });
+  const bottomRef = useRef(null);
+  const fileRef   = useRef(null);
 
   const loadModels = (key) => {
     setML(true);
@@ -299,7 +531,13 @@ export default function App() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
   useEffect(() => { setEstimate(null); }, [input, attachments, modelId, mode, effort, budget, maxTok, sysPrompt]);
 
-  // Build user content array (text + attachments)
+  // Update context token estimates
+  useEffect(() => {
+    const est = (t) => Math.ceil((t || "").split(/\s+/).filter(Boolean).length * 1.3);
+    const histToks = messages.reduce((acc, m) => acc + est(m.text), 0);
+    setCtxTokens({ sys: est(sysPrompt), history: histToks, last: est(input) });
+  }, [sysPrompt, messages, input]);
+
   const buildUserContent = (text) => {
     if (attachments.length === 0) return text;
     const blocks = attachments.map(attachmentToContentBlock);
@@ -345,7 +583,7 @@ export default function App() {
     const txt = input.trim();
     if (!txt && attachments.length === 0) return;
     if (loading) return;
-    const estIn   = estimate?.inputTok;
+    const estIn = estimate?.inputTok;
     const history = getHistory();
     const userContent = buildUserContent(txt);
     const attNames = attachments.map(a => a.name);
@@ -395,6 +633,7 @@ export default function App() {
   const estMax    = estimate ? calcCost(estimate.inputTok, price.in) + calcCost(estimate.maxOut + estimate.thinkMax, price.out) : 0;
   const modelLabel = (m) => { const p = getPrice(m.id); return `${m.display_name || m.id}  ·  $${p.in}/$${p.out}`; };
   const canSend = input.trim().length > 0 || attachments.length > 0;
+  const lastMsgCost = messages.length > 0 ? (messages[messages.length - 1]?.usage?.cost || total.cost / Math.max(messages.filter(m=>m.role==="assistant").length, 1)) : 0;
 
   if (!apiKey) return <ApiKeyScreen onSave={setApiKey} />;
 
@@ -446,7 +685,7 @@ export default function App() {
 
         {showKeyEdit && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.muted }}>key: {apiKey.slice(0,16)}…{apiKey.slice(-4)}</span>
+            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.muted }}>key: {apiKey.slice(0, 16)}…{apiKey.slice(-4)}</span>
             <button onClick={forgetKey} style={{ fontFamily: T.sans, fontSize: 12, color: T.red, background: "transparent", border: `1px solid ${T.red}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>forget key</button>
             <button onClick={() => setShowKeyEdit(false)} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>done</button>
           </div>
@@ -456,13 +695,15 @@ export default function App() {
           {mode === "extended" && (
             <div style={{ display: "flex", gap: 9, alignItems: "center", flex: 1, minWidth: 160 }}>
               <Lbl>Think budget</Lbl>
-              <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget} onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
+              <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget}
+                onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
               <span style={{ fontFamily: T.mono, fontSize: 15, color: budget >= maxTok - 512 ? T.red : T.coral, minWidth: 52, textAlign: "right" }}>{fmt(budget)}</span>
             </div>
           )}
           <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
             <Lbl>Max out</Lbl>
-            <input type="range" min={1024} max={32000} step={512} value={maxTok} onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
+            <input type="range" min={1024} max={32000} step={512} value={maxTok}
+              onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
             <span style={{ fontFamily: T.mono, fontSize: 15, color: T.onDark, minWidth: 52, textAlign: "right" }}>{fmt(maxTok)}</span>
           </div>
           {mode !== "off" && (
@@ -471,6 +712,7 @@ export default function App() {
             </label>
           )}
           <button onClick={() => setShowSys(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showSys ? T.coral : T.onDarkSoft, background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>sys prompt</button>
+          <button onClick={() => setShowPanels(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showPanels ? T.coral : T.onDarkSoft, background: showPanels ? T.coralDim : "transparent", border: `1px solid ${showPanels ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>insights ✦</button>
         </div>
 
         {showSys && (
@@ -479,10 +721,13 @@ export default function App() {
         )}
       </div>
 
+      {/* CONTEXT WINDOW BAR */}
+      <ContextBar sysTokens={ctxTokens.sys} historyTokens={ctxTokens.history} lastTokens={ctxTokens.last} />
+
       {/* MESSAGES */}
       <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 10px", display: "flex", flexDirection: "column", gap: 18 }}>
         {messages.length === 0 && !loading && (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 80 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 60 }}>
             <div style={{ fontFamily: T.serif, fontSize: 32, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Configure · Estimate · Send</div>
             <div style={{ fontSize: 13, color: T.muted }}>
               counts tokens before every burn · supports pdf, docx, images, txt ·{" "}
@@ -547,6 +792,15 @@ export default function App() {
         {error && <div style={{ fontFamily: T.mono, fontSize: 13, color: T.red, padding: "10px 14px", background: T.redBg, border: `1px solid ${T.red}`, borderRadius: 8 }}>{error}</div>}
         <div ref={bottomRef} />
       </div>
+
+      {/* INSIGHT PANELS */}
+      {showPanels && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, padding: "8px 16px", background: T.bg0, borderTop: `1px solid ${T.hairline}`, flexShrink: 0 }}>
+          <CostProjector perMsgCost={lastMsgCost || calcCost(500, price.in) + calcCost(200, price.out)} models={models} lastMsgTokens={ctxTokens.last || 500} />
+          <PromptOptimizer sysPrompt={sysPrompt} setSysPrompt={setSysPrompt} apiKey={apiKey} />
+          <ModelRouter messages={messages} modelId={modelId} setModelId={setModelId} />
+        </div>
+      )}
 
       {/* ESTIMATE PANEL */}
       {estimate && (
@@ -614,13 +868,12 @@ export default function App() {
 
       {/* INPUT */}
       <div style={{
-        borderTop: `1px solid ${estimate ? T.hairline : T.hairline}`,
+        borderTop: `1px solid ${T.hairline}`,
         margin: estimate ? "0 16px 16px" : 0,
         border: estimate ? `1px solid ${T.coralBorder}` : undefined,
         borderRadius: estimate ? "0 0 10px 10px" : 0,
         padding: "12px 16px", background: T.bg1, flexShrink: 0,
       }}>
-        {/* Attachment chips */}
         {attachments.length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
             {attachments.map((att, i) => (
@@ -630,15 +883,13 @@ export default function App() {
         )}
 
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
-          {/* Hidden file input */}
           <input ref={fileRef} type="file" accept={ACCEPTED} multiple onChange={e => { if (e.target.files.length) handleFiles(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
 
-          {/* Paperclip button */}
           <button onClick={() => fileRef.current?.click()} disabled={processing} title="Attach file (pdf, docx, txt, image)" style={{
             background: "transparent", border: `1px solid ${T.hairline2}`, borderRadius: 8,
             width: 42, height: 42, flexShrink: 0, cursor: processing ? "wait" : "pointer",
-            color: attachments.length > 0 ? T.coral : T.onDarkSoft, fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
-            opacity: processing ? 0.5 : 1,
+            color: attachments.length > 0 ? T.coral : T.onDarkSoft, fontSize: 18,
+            display: "flex", alignItems: "center", justifyContent: "center", opacity: processing ? 0.5 : 1,
           }}>
             {processing ? "⏳" : "📎"}
           </button>
