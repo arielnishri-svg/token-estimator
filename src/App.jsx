@@ -163,6 +163,63 @@ const classifyComplexity = (text) => {
   return "sonnet";
 };
 
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+function Tooltip({ tip, children, pos = "top", maxW = 220 }) {
+  const [show, setShow] = useState(false);
+  if (!tip) return children;
+  const isTop = pos === "top";
+  return (
+    <div
+      style={{ position: "relative", display: "inline-flex" }}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <div style={{
+          position: "absolute",
+          bottom: isTop ? "calc(100% + 8px)" : undefined,
+          top: isTop ? undefined : "calc(100% + 8px)",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "#242220",
+          color: "#d6d2cc",
+          fontSize: 12,
+          lineHeight: 1.45,
+          padding: "6px 10px",
+          borderRadius: 6,
+          pointerEvents: "none",
+          border: "1px solid rgba(250,249,245,0.12)",
+          zIndex: 9999,
+          maxWidth: maxW,
+          width: "max-content",
+          textAlign: "center",
+          whiteSpace: "normal",
+        }}>
+          {tip}
+          <div style={{
+            position: "absolute",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 0, height: 0,
+            ...(isTop ? {
+              top: "100%",
+              borderLeft: "5px solid transparent",
+              borderRight: "5px solid transparent",
+              borderTop: "5px solid #242220",
+            } : {
+              bottom: "100%",
+              borderLeft: "5px solid transparent",
+              borderRight: "5px solid transparent",
+              borderBottom: "5px solid #242220",
+            }),
+          }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Components ────────────────────────────────────────────────────────────────
 function Pill({ active, color = "default", onClick, children, disabled }) {
   const colors = {
@@ -210,7 +267,13 @@ function ContextBar({ sysTokens, historyTokens, lastTokens }) {
   const sysPct  = (sysTokens / CTX_WINDOW) * 100;
   const hisPct  = (historyTokens / CTX_WINDOW) * 100;
   const lastPct = (lastTokens / CTX_WINDOW) * 100;
-  const barColor = pct > 80 ? T.red : pct > 50 ? "#e8a55a" : T.green;
+
+  const legend = [
+    { color: T.coral,    label: `sys prompt ${fmt(sysTokens)}`,       tip: "Your system prompt — sent as input every message" },
+    { color: T.green,    label: `history ${fmt(historyTokens)}`,       tip: "All previous messages in this session" },
+    { color: T.blue,     label: `last msg ${fmt(lastTokens)}`,         tip: "Your current input (word-count estimate)" },
+    { color: T.hairline2,label: `available ${fmt(CTX_WINDOW - total)}`,tip: "Remaining context capacity before hitting the 200k limit" },
+  ];
 
   return (
     <div style={{ background: T.bg1, borderBottom: `1px solid ${T.hairline}`, padding: "8px 20px" }}>
@@ -218,10 +281,12 @@ function ContextBar({ sysTokens, historyTokens, lastTokens }) {
         <span style={{ fontSize: 11, fontWeight: 500, color: T.muted, textTransform: "uppercase", letterSpacing: "0.08em" }}>
           Context window <Badge>new</Badge>
         </span>
-        <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>
-          {fmt(total)} / {fmt(CTX_WINDOW)}
-          <span style={{ color: pct > 80 ? T.red : T.green, marginLeft: 6 }}>{pct.toFixed(1)}% used</span>
-        </span>
+        <Tooltip tip={`${pct.toFixed(1)}% of the 200k context window used across all inputs`} pos="top">
+          <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft, cursor: "default" }}>
+            {fmt(total)} / {fmt(CTX_WINDOW)}
+            <span style={{ color: pct > 80 ? T.red : T.green, marginLeft: 6 }}>{pct.toFixed(1)}% used</span>
+          </span>
+        </Tooltip>
       </div>
       <div style={{ height: 5, background: T.hairline, borderRadius: 99, overflow: "hidden", display: "flex", gap: 1 }}>
         {sysPct > 0  && <div style={{ width: `${sysPct}%`,  background: T.coral, borderRadius: 2 }} />}
@@ -229,16 +294,13 @@ function ContextBar({ sysTokens, historyTokens, lastTokens }) {
         {lastPct > 0 && <div style={{ width: `${lastPct}%`, background: T.blue,  borderRadius: 2 }} />}
       </div>
       <div style={{ display: "flex", gap: 14, marginTop: 5 }}>
-        {[
-          { color: T.coral, label: `sys prompt ${fmt(sysTokens)}` },
-          { color: T.green, label: `history ${fmt(historyTokens)}` },
-          { color: T.blue,  label: `last msg ${fmt(lastTokens)}` },
-          { color: T.hairline2, label: `available ${fmt(CTX_WINDOW - total)}` },
-        ].map(({ color, label }) => (
-          <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-            <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: T.muted }}>{label}</span>
-          </div>
+        {legend.map(({ color, label, tip }) => (
+          <Tooltip key={label} tip={tip} pos="bottom">
+            <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "default" }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: color, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: T.muted }}>{label}</span>
+            </div>
+          </Tooltip>
         ))}
       </div>
     </div>
@@ -262,9 +324,11 @@ function CostProjector({ perMsgCost, models, lastMsgTokens }) {
       <div style={{ fontSize: 12, color: T.muted, marginBottom: 6 }}>
         Per message: <span style={{ color: T.onDark }}>{fmtCost(perMsgCost)}</span>
       </div>
-      <input type="range" min={100} max={100000} step={100} value={calls}
-        onChange={e => setCalls(Number(e.target.value))}
-        style={{ width: "100%", accentColor: T.coral, marginBottom: 4 }} />
+      <Tooltip tip="Drag to project cost at different call volumes" pos="top">
+        <input type="range" min={100} max={100000} step={100} value={calls}
+          onChange={e => setCalls(Number(e.target.value))}
+          style={{ width: "100%", accentColor: T.coral, marginBottom: 4 }} />
+      </Tooltip>
       <div style={{ fontSize: 11, color: T.muted, marginBottom: 8 }}>{fmt(calls)} calls/mo</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
         <div style={{ background: T.bg2, borderRadius: 6, padding: 8 }}>
@@ -324,12 +388,14 @@ function PromptOptimizer({ sysPrompt, setSysPrompt, apiKey }) {
               : "Add a system prompt (click sys prompt above) to optimize it."}
           </div>
           {error && <div style={{ fontSize: 11, color: T.red, marginBottom: 8 }}>{error}</div>}
-          <button onClick={run} disabled={!sysPrompt.trim()} style={{
-            width: "100%", fontFamily: T.sans, fontSize: 12, fontWeight: 500,
-            background: T.coralDim, border: `1px solid ${T.coralBorder}`, color: T.coral,
-            borderRadius: 6, padding: "7px", cursor: sysPrompt.trim() ? "pointer" : "not-allowed",
-            opacity: sysPrompt.trim() ? 1 : 0.4,
-          }}>optimize →</button>
+          <Tooltip tip="Rewrites your system prompt via Haiku to use fewer tokens with same intent" pos="top">
+            <button onClick={run} disabled={!sysPrompt.trim()} style={{
+              width: "100%", fontFamily: T.sans, fontSize: 12, fontWeight: 500,
+              background: T.coralDim, border: `1px solid ${T.coralBorder}`, color: T.coral,
+              borderRadius: 6, padding: "7px", cursor: sysPrompt.trim() ? "pointer" : "not-allowed",
+              opacity: sysPrompt.trim() ? 1 : 0.4,
+            }}>optimize →</button>
+          </Tooltip>
         </>
       )}
 
@@ -348,8 +414,12 @@ function PromptOptimizer({ sysPrompt, setSysPrompt, apiKey }) {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 11, color: T.green }}>saved ~{saved} tokens ({savedPct}%)</span>
             <div style={{ display: "flex", gap: 5 }}>
-              <button onClick={() => setOptimized(null)} style={{ fontSize: 11, background: "transparent", border: `1px solid ${T.hairline2}`, color: T.muted, borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>discard</button>
-              <button onClick={apply} style={{ fontSize: 11, background: T.coralDim, border: `1px solid ${T.coralBorder}`, color: T.coral, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 500 }}>apply →</button>
+              <Tooltip tip="Discard optimized version, keep original" pos="top">
+                <button onClick={() => setOptimized(null)} style={{ fontSize: 11, background: "transparent", border: `1px solid ${T.hairline2}`, color: T.muted, borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>discard</button>
+              </Tooltip>
+              <Tooltip tip="Replace your system prompt with the optimized version" pos="top">
+                <button onClick={apply} style={{ fontSize: 11, background: T.coralDim, border: `1px solid ${T.coralBorder}`, color: T.coral, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontWeight: 500 }}>apply →</button>
+              </Tooltip>
             </div>
           </div>
         </>
@@ -377,9 +447,9 @@ function ModelRouter({ messages, modelId, setModelId }) {
   }, [messages]);
 
   const tiers = [
-    { key: "haiku",  label: "Haiku",  color: T.green },
-    { key: "sonnet", label: "Sonnet", color: T.coral },
-    { key: "opus",   label: "Opus",   color: T.blue  },
+    { key: "haiku",  label: "Haiku",  color: T.green, tip: "Simple, short, or conversational queries" },
+    { key: "sonnet", label: "Sonnet", color: T.coral, tip: "Medium complexity — coding, analysis, writing" },
+    { key: "opus",   label: "Opus",   color: T.blue,  tip: "Complex reasoning, long docs, architecture" },
   ];
 
   return (
@@ -393,14 +463,16 @@ function ModelRouter({ messages, modelId, setModelId }) {
       ) : (
         <>
           <div style={{ fontSize: 11, color: T.muted, marginBottom: 8 }}>Based on last {analysis.total} messages</div>
-          {tiers.map(({ key, label, color }) => (
-            <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <span style={{ fontSize: 12, color: T.onDarkSoft, minWidth: 48 }}>{label}</span>
-              <div style={{ flex: 1, background: T.hairline, borderRadius: 99, height: 5, overflow: "hidden" }}>
-                <div style={{ width: `${analysis[key]}%`, height: "100%", background: color, borderRadius: 99 }} />
+          {tiers.map(({ key, label, color, tip }) => (
+            <Tooltip key={key} tip={tip} pos="top">
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, width: "100%", cursor: "default" }}>
+                <span style={{ fontSize: 12, color: T.onDarkSoft, minWidth: 48 }}>{label}</span>
+                <div style={{ flex: 1, background: T.hairline, borderRadius: 99, height: 5, overflow: "hidden" }}>
+                  <div style={{ width: `${analysis[key]}%`, height: "100%", background: color, borderRadius: 99 }} />
+                </div>
+                <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDark, minWidth: 32, textAlign: "right" }}>{analysis[key]}%</span>
               </div>
-              <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDark, minWidth: 32, textAlign: "right" }}>{analysis[key]}%</span>
-            </div>
+            </Tooltip>
           ))}
           {analysis.suggested && (
             <div style={{ fontSize: 11, color: T.green, border: "1px solid rgba(93,184,166,0.3)", borderRadius: 5, padding: "5px 8px", marginTop: 6, lineHeight: 1.5 }}>
@@ -499,7 +571,7 @@ export default function App() {
   const [expanded, setExpanded]       = useState({});
   const [estimate, setEstimate]       = useState(null);
   const [showKeyEdit, setShowKeyEdit] = useState(false);
-  const [showPanels, setShowPanels]   = useState(true);
+  const [showPanels, setShowPanels]   = useState(false); // off by default
   const [ctxTokens, setCtxTokens]     = useState({ sys: 0, history: 0, last: 0 });
   const bottomRef = useRef(null);
   const fileRef   = useRef(null);
@@ -531,7 +603,6 @@ export default function App() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loading]);
   useEffect(() => { setEstimate(null); }, [input, attachments, modelId, mode, effort, budget, maxTok, sysPrompt]);
 
-  // Update context token estimates
   useEffect(() => {
     const est = (t) => Math.ceil((t || "").split(/\s+/).filter(Boolean).length * 1.3);
     const histToks = messages.reduce((acc, m) => acc + est(m.text), 0);
@@ -635,6 +706,19 @@ export default function App() {
   const canSend = input.trim().length > 0 || attachments.length > 0;
   const lastMsgCost = messages.length > 0 ? (messages[messages.length - 1]?.usage?.cost || total.cost / Math.max(messages.filter(m=>m.role==="assistant").length, 1)) : 0;
 
+  // Thinking mode tooltip copy
+  const thinkTips = {
+    off:      "No extended thinking — effort level controls reasoning depth",
+    extended: "Fixed token budget for thinking — set the budget below",
+    adaptive: "Claude decides when and how much to think per message",
+  };
+  const effortTips = {
+    low:    "Fastest, cheapest — light reasoning",
+    medium: "Balanced speed and depth",
+    high:   "Deeper reasoning, slower response",
+    max:    "Maximum effort — slowest, most thorough",
+  };
+
   if (!apiKey) return <ApiKeyScreen onSave={setApiKey} />;
 
   return (
@@ -649,16 +733,22 @@ export default function App() {
             <Lbl>Model</Lbl>
             {modelsLoading
               ? <span style={{ fontSize: 12, color: T.muted }}>loading…</span>
-              : <select value={modelId} onChange={e => setModelId(e.target.value)} style={{ fontFamily: T.sans, fontSize: 15, background: T.bg3, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "6px 11px", maxWidth: 300 }}>
-                  {models.map(m => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
-                </select>
+              : <Tooltip tip="Select Claude model — price shown as $in/$out per million tokens" pos="bottom">
+                  <select value={modelId} onChange={e => setModelId(e.target.value)} style={{ fontFamily: T.sans, fontSize: 15, background: T.bg3, color: T.onDark, border: `1px solid ${T.hairline2}`, borderRadius: 8, padding: "6px 11px", maxWidth: 300 }}>
+                    {models.map(m => <option key={m.id} value={m.id}>{modelLabel(m)}</option>)}
+                  </select>
+                </Tooltip>
             }
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Lbl>Think</Lbl>
             <div style={{ display: "flex", gap: 4 }}>
-              {caps.modes.map(m => <Pill key={m} active={mode === m} color="coral" onClick={() => setMode(m)}>{m}</Pill>)}
+              {caps.modes.map(m => (
+                <Tooltip key={m} tip={thinkTips[m] || m} pos="bottom">
+                  <Pill active={mode === m} color="coral" onClick={() => setMode(m)}>{m}</Pill>
+                </Tooltip>
+              ))}
             </div>
           </div>
 
@@ -666,27 +756,47 @@ export default function App() {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <Lbl>Effort</Lbl>
               <div style={{ display: "flex", gap: 4 }}>
-                {EFFORTS.map(e => <Pill key={e} active={effort === e} color="coral" onClick={() => setEffort(e)}>{e}</Pill>)}
+                {EFFORTS.map(e => (
+                  <Tooltip key={e} tip={effortTips[e]} pos="bottom">
+                    <Pill active={effort === e} color="coral" onClick={() => setEffort(e)}>{e}</Pill>
+                  </Tooltip>
+                ))}
               </div>
             </div>
           )}
 
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
             {total.in > 0 && <>
-              <span style={{ fontFamily: T.mono, fontSize: 14, color: T.onDarkSoft }}>{fmt(total.in)}↓ {fmt(total.out)}↑</span>
-              <span style={{ fontFamily: T.mono, fontSize: 15, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 8, padding: "4px 12px", fontWeight: 500 }}>{fmtCost(total.cost)}</span>
+              <Tooltip tip="Session totals — input ↓ and output ↑ tokens" pos="bottom">
+                <span style={{ fontFamily: T.mono, fontSize: 14, color: T.onDarkSoft, cursor: "default" }}>{fmt(total.in)}↓ {fmt(total.out)}↑</span>
+              </Tooltip>
+              <Tooltip tip="Total session cost so far" pos="bottom">
+                <span style={{ fontFamily: T.mono, fontSize: 15, color: T.coral, background: T.coralDim, border: `1px solid ${T.coralBorder}`, borderRadius: 8, padding: "4px 12px", fontWeight: 500, cursor: "default" }}>{fmtCost(total.cost)}</span>
+              </Tooltip>
             </>}
-            {messages.length > 0 && <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>clear</button>}
-            <button onClick={() => setShowKeyEdit(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showKeyEdit ? T.coral : T.muted, background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>api key</button>
-            <a href="https://github.com/arielnishri-svg/token-estimator#readme" target="_blank" rel="noreferrer" style={{ fontFamily: T.sans, fontSize: 14, color: T.muted, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>docs ↗</a>
-            <a href="/snippet.txt" download="claude-token-estimator-snippet.txt" style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>snippet ↓</a>
+            {messages.length > 0 &&
+              <Tooltip tip="Clear all messages and reset session cost" pos="bottom">
+                <button onClick={clear} style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>clear</button>
+              </Tooltip>
+            }
+            <Tooltip tip="View or forget your stored API key" pos="bottom">
+              <button onClick={() => setShowKeyEdit(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showKeyEdit ? T.coral : T.muted, background: "transparent", border: `1px solid ${showKeyEdit ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer" }}>api key</button>
+            </Tooltip>
+            <Tooltip tip="Open README documentation" pos="bottom">
+              <a href="https://github.com/arielnishri-svg/token-estimator#readme" target="_blank" rel="noreferrer" style={{ fontFamily: T.sans, fontSize: 14, color: T.muted, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>docs ↗</a>
+            </Tooltip>
+            <Tooltip tip="Download the claude.ai artifact version — no API key needed" pos="bottom">
+              <a href="/snippet.txt" download="claude-token-estimator-snippet.txt" style={{ fontFamily: T.sans, fontSize: 14, color: T.onDarkSoft, textDecoration: "none", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "5px 12px", whiteSpace: "nowrap" }}>snippet ↓</a>
+            </Tooltip>
           </div>
         </div>
 
         {showKeyEdit && (
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
             <span style={{ fontFamily: T.mono, fontSize: 12, color: T.muted }}>key: {apiKey.slice(0, 16)}…{apiKey.slice(-4)}</span>
-            <button onClick={forgetKey} style={{ fontFamily: T.sans, fontSize: 12, color: T.red, background: "transparent", border: `1px solid ${T.red}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>forget key</button>
+            <Tooltip tip="Remove the API key from localStorage — you'll need to re-enter it" pos="bottom">
+              <button onClick={forgetKey} style={{ fontFamily: T.sans, fontSize: 12, color: T.red, background: "transparent", border: `1px solid ${T.red}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>forget key</button>
+            </Tooltip>
             <button onClick={() => setShowKeyEdit(false)} style={{ fontFamily: T.sans, fontSize: 12, color: T.onDarkSoft, background: "transparent", border: `1px solid ${T.hairline}`, borderRadius: 8, padding: "3px 10px", cursor: "pointer" }}>done</button>
           </div>
         )}
@@ -695,24 +805,34 @@ export default function App() {
           {mode === "extended" && (
             <div style={{ display: "flex", gap: 9, alignItems: "center", flex: 1, minWidth: 160 }}>
               <Lbl>Think budget</Lbl>
-              <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget}
-                onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
+              <Tooltip tip="Max tokens Claude can spend thinking — higher = deeper reasoning, higher cost ceiling" pos="bottom">
+                <input type="range" min={1024} max={Math.min(32000, maxTok - 512)} step={512} value={budget}
+                  onChange={e => setBudget(Number(e.target.value))} style={{ flex: 1, accentColor: T.coral }} />
+              </Tooltip>
               <span style={{ fontFamily: T.mono, fontSize: 15, color: budget >= maxTok - 512 ? T.red : T.coral, minWidth: 52, textAlign: "right" }}>{fmt(budget)}</span>
             </div>
           )}
           <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
             <Lbl>Max out</Lbl>
-            <input type="range" min={1024} max={32000} step={512} value={maxTok}
-              onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
+            <Tooltip tip="Maximum output tokens — caps response length and cost ceiling" pos="bottom">
+              <input type="range" min={1024} max={32000} step={512} value={maxTok}
+                onChange={e => setMaxTok(Number(e.target.value))} style={{ width: 90, accentColor: T.coral }} />
+            </Tooltip>
             <span style={{ fontFamily: T.mono, fontSize: 15, color: T.onDark, minWidth: 52, textAlign: "right" }}>{fmt(maxTok)}</span>
           </div>
           {mode !== "off" && (
-            <label style={{ display: "flex", gap: 7, alignItems: "center", fontFamily: T.sans, fontSize: 15, color: T.onDarkSoft, cursor: "pointer" }}>
-              <input type="checkbox" checked={showThink} onChange={e => setShowThink(e.target.checked)} style={{ accentColor: T.coral }} /> show thinking
-            </label>
+            <Tooltip tip="Display Claude's internal reasoning trace in the chat" pos="bottom">
+              <label style={{ display: "flex", gap: 7, alignItems: "center", fontFamily: T.sans, fontSize: 15, color: T.onDarkSoft, cursor: "pointer" }}>
+                <input type="checkbox" checked={showThink} onChange={e => setShowThink(e.target.checked)} style={{ accentColor: T.coral }} /> show thinking
+              </label>
+            </Tooltip>
           )}
-          <button onClick={() => setShowSys(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showSys ? T.coral : T.onDarkSoft, background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>sys prompt</button>
-          <button onClick={() => setShowPanels(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showPanels ? T.coral : T.onDarkSoft, background: showPanels ? T.coralDim : "transparent", border: `1px solid ${showPanels ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>insights ✦</button>
+          <Tooltip tip="Add a system prompt — counts as input tokens on every message" pos="bottom">
+            <button onClick={() => setShowSys(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showSys ? T.coral : T.onDarkSoft, background: "transparent", border: `1px solid ${showSys ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>sys prompt</button>
+          </Tooltip>
+          <Tooltip tip="Toggle insight panels: context window bar, cost projector, prompt optimizer, model router" pos="bottom">
+            <button onClick={() => setShowPanels(s => !s)} style={{ fontFamily: T.sans, fontSize: 14, color: showPanels ? T.coral : T.onDarkSoft, background: showPanels ? T.coralDim : "transparent", border: `1px solid ${showPanels ? T.coralBorder : T.hairline}`, borderRadius: 8, padding: "5px 14px", cursor: "pointer" }}>insights ✦</button>
+          </Tooltip>
         </div>
 
         {showSys && (
@@ -769,16 +889,24 @@ export default function App() {
 
             {msg.role === "assistant" && msg.usage && (
               <div style={{ display: "flex", gap: 10, marginTop: 7, alignItems: "center", flexWrap: "wrap", paddingLeft: 2 }}>
-                <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>↓{fmt(msg.usage.in)} ↑{fmt(msg.usage.out)}{msg.usage.cr > 0 ? ` cache:${fmt(msg.usage.cr)}` : ""}</span>
-                <span style={{ fontFamily: T.mono, fontSize: 13, color: T.coral, fontWeight: 500 }}>{fmtCost(msg.usage.cost)}</span>
+                <Tooltip tip="Input ↓ and output ↑ tokens for this message" pos="top">
+                  <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft, cursor: "default" }}>↓{fmt(msg.usage.in)} ↑{fmt(msg.usage.out)}{msg.usage.cr > 0 ? ` cache:${fmt(msg.usage.cr)}` : ""}</span>
+                </Tooltip>
+                <Tooltip tip="Actual cost for this message" pos="top">
+                  <span style={{ fontFamily: T.mono, fontSize: 13, color: T.coral, fontWeight: 500, cursor: "default" }}>{fmtCost(msg.usage.cost)}</span>
+                </Tooltip>
                 {msg.estimatedIn && (
-                  <span style={{ fontFamily: T.mono, fontSize: 12, color: Math.abs(msg.usage.in - msg.estimatedIn) > msg.estimatedIn * 0.1 ? T.red : T.green }}>
-                    est {fmt(msg.estimatedIn)} → actual {fmt(msg.usage.in)} ({msg.usage.in > msg.estimatedIn ? "+" : ""}{fmt(msg.usage.in - msg.estimatedIn)})
-                  </span>
+                  <Tooltip tip="How close the pre-send estimate was to the actual token count" pos="top">
+                    <span style={{ fontFamily: T.mono, fontSize: 12, color: Math.abs(msg.usage.in - msg.estimatedIn) > msg.estimatedIn * 0.1 ? T.red : T.green, cursor: "default" }}>
+                      est {fmt(msg.estimatedIn)} → actual {fmt(msg.usage.in)} ({msg.usage.in > msg.estimatedIn ? "+" : ""}{fmt(msg.usage.in - msg.estimatedIn)})
+                    </span>
+                  </Tooltip>
                 )}
-                <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 11, color: T.onDarkSoft, background: T.bg2, border: `1px solid ${T.hairline}`, borderRadius: 6, padding: "2px 8px" }}>
-                  {msg.meta.mode}{msg.meta.effort ? `·${msg.meta.effort}` : ""}{msg.meta.budget ? `·${fmt(msg.meta.budget)}tok` : ""}
-                </span>
+                <Tooltip tip="Thinking mode and settings used for this message" pos="top">
+                  <span style={{ marginLeft: "auto", fontFamily: T.mono, fontSize: 11, color: T.onDarkSoft, background: T.bg2, border: `1px solid ${T.hairline}`, borderRadius: 6, padding: "2px 8px", cursor: "default" }}>
+                    {msg.meta.mode}{msg.meta.effort ? `·${msg.meta.effort}` : ""}{msg.meta.budget ? `·${fmt(msg.meta.budget)}tok` : ""}
+                  </span>
+                </Tooltip>
               </div>
             )}
           </div>
@@ -807,7 +935,9 @@ export default function App() {
         <div style={{ margin: "0 16px 0", background: T.bg1, border: `1px solid ${T.coralBorder}`, borderRadius: "10px 10px 0 0", padding: "16px 20px", borderBottom: "none" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <span style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 400, color: T.onDark, letterSpacing: "-0.3px" }}>Cost estimate — confirm to send</span>
-            <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft }}>input: {fmt(estimate.inputTok)} tokens (exact)</span>
+            <Tooltip tip="Exact count from the token counting API (free call, not billed)" pos="top">
+              <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft, cursor: "default" }}>input: {fmt(estimate.inputTok)} tokens (exact)</span>
+            </Tooltip>
           </div>
 
           <div style={{ marginBottom: 14 }}>
@@ -820,12 +950,14 @@ export default function App() {
                 const p      = getPrice(m.id);
                 const name   = (m.display_name || m.id).replace("Claude ", "");
                 return (
-                  <div key={m.id} onClick={() => setModelId(m.id)} style={{ padding: "10px 12px", borderRadius: 8, cursor: "pointer", background: active ? T.coralDim : T.bg2, border: `1px solid ${active ? T.coralBorder : T.hairline2}`, transition: "all 0.12s" }}>
-                    <div style={{ fontFamily: T.sans, fontSize: 12, color: active ? T.coral : T.onDarkSoft, marginBottom: 3, fontWeight: active ? 500 : 400 }}>{name}{active ? " ✓" : ""}</div>
-                    <div style={{ fontFamily: T.serif, fontSize: 20, color: active ? T.coral : T.onDark }}>{fmtCost(likely)}</div>
-                    <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>up to {fmtCost(max)}</div>
-                    <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>${p.in}/${p.out}/MTok</div>
-                  </div>
+                  <Tooltip key={m.id} tip={active ? "Currently selected — click another card to switch" : "Click to switch to this model before sending"} pos="top">
+                    <div onClick={() => setModelId(m.id)} style={{ padding: "10px 12px", borderRadius: 8, cursor: "pointer", background: active ? T.coralDim : T.bg2, border: `1px solid ${active ? T.coralBorder : T.hairline2}`, transition: "all 0.12s", width: "100%" }}>
+                      <div style={{ fontFamily: T.sans, fontSize: 12, color: active ? T.coral : T.onDarkSoft, marginBottom: 3, fontWeight: active ? 500 : 400 }}>{name}{active ? " ✓" : ""}</div>
+                      <div style={{ fontFamily: T.serif, fontSize: 20, color: active ? T.coral : T.onDark }}>{fmtCost(likely)}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>up to {fmtCost(max)}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>${p.in}/${p.out}/MTok</div>
+                    </div>
+                  </Tooltip>
                 );
               })}
             </div>
@@ -838,30 +970,40 @@ export default function App() {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "8px 18px" }}>
               {[
-                { label: "Input",        val: fmtCost(calcCost(estimate.inputTok, price.in)),  note: `${fmt(estimate.inputTok)} tok` },
-                { label: "Out (min)",    val: fmtCost(calcCost(estimate.minOut, price.out)),    note: `~${fmt(estimate.minOut)} tok` },
-                { label: "Out (likely)", val: fmtCost(calcCost(estimate.likelyOut, price.out)), note: `~${fmt(estimate.likelyOut)} tok` },
+                { label: "Input",        val: fmtCost(calcCost(estimate.inputTok, price.in)),  note: `${fmt(estimate.inputTok)} tok`,    tip: "Exact input token count × input rate" },
+                { label: "Out (min)",    val: fmtCost(calcCost(estimate.minOut, price.out)),    note: `~${fmt(estimate.minOut)} tok`,      tip: "Cost floor — assumes a very short reply" },
+                { label: "Out (likely)", val: fmtCost(calcCost(estimate.likelyOut, price.out)), note: `~${fmt(estimate.likelyOut)} tok`,   tip: "25% of max_tokens — typical real-world output length" },
                 estimate.thinkMax > 0
-                  ? { label: "Think (max)", val: fmtCost(calcCost(estimate.thinkMax, price.out)), note: `≤${fmt(estimate.thinkMax)} tok` }
-                  : { label: "Out (max)",   val: fmtCost(calcCost(estimate.maxOut, price.out)),  note: `${fmt(estimate.maxOut)} tok` },
-              ].map(({ label, val, note }) => (
-                <div key={label}>
-                  <div style={{ fontSize: 11, color: T.muted, marginBottom: 3 }}>{label}</div>
-                  <div style={{ fontFamily: T.serif, fontSize: 18, color: T.onDark }}>{val}</div>
-                  <div style={{ fontFamily: T.mono, fontSize: 11, color: T.onDarkSoft, marginTop: 2 }}>{note}</div>
-                </div>
+                  ? { label: "Think (max)", val: fmtCost(calcCost(estimate.thinkMax, price.out)), note: `≤${fmt(estimate.thinkMax)} tok`, tip: "Thinking tokens billed at output rate — actual usage may be lower" }
+                  : { label: "Out (max)",   val: fmtCost(calcCost(estimate.maxOut, price.out)),  note: `${fmt(estimate.maxOut)} tok`,      tip: "Worst case — full max_tokens used" },
+              ].map(({ label, val, note, tip }) => (
+                <Tooltip key={label} tip={tip} pos="top">
+                  <div style={{ cursor: "default" }}>
+                    <div style={{ fontSize: 11, color: T.muted, marginBottom: 3 }}>{label}</div>
+                    <div style={{ fontFamily: T.serif, fontSize: 18, color: T.onDark }}>{val}</div>
+                    <div style={{ fontFamily: T.mono, fontSize: 11, color: T.onDarkSoft, marginTop: 2 }}>{note}</div>
+                  </div>
+                </Tooltip>
               ))}
             </div>
             <div style={{ marginTop: 12, display: "flex", gap: 16, alignItems: "baseline" }}>
               <span style={{ fontSize: 13, color: T.onDarkSoft }}>Likely total:</span>
-              <span style={{ fontFamily: T.serif, fontSize: 26, color: T.coral }}>{fmtCost(estLikely)}</span>
-              <span style={{ fontSize: 12, color: T.muted }}>ceiling: {fmtCost(estMax)}</span>
+              <Tooltip tip="Input cost + likely output + ~30% of thinking budget" pos="top">
+                <span style={{ fontFamily: T.serif, fontSize: 26, color: T.coral, cursor: "default" }}>{fmtCost(estLikely)}</span>
+              </Tooltip>
+              <Tooltip tip="Worst case: full max_tokens output + full thinking budget" pos="top">
+                <span style={{ fontSize: 12, color: T.muted, cursor: "default" }}>ceiling: {fmtCost(estMax)}</span>
+              </Tooltip>
             </div>
           </div>
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button onClick={() => setEstimate(null)} style={{ fontFamily: T.sans, fontSize: 13, padding: "8px 20px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: "transparent", color: T.onDarkSoft, cursor: "pointer" }}>cancel</button>
-            <button onClick={executeSend} style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "8px 24px", borderRadius: 8, border: "none", background: T.coral, color: T.onCoral, cursor: "pointer" }}>send it →</button>
+            <Tooltip tip="Dismiss estimate — message stays in the input box" pos="top">
+              <button onClick={() => setEstimate(null)} style={{ fontFamily: T.sans, fontSize: 13, padding: "8px 20px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: "transparent", color: T.onDarkSoft, cursor: "pointer" }}>cancel</button>
+            </Tooltip>
+            <Tooltip tip="Send the message now — this will be billed" pos="top">
+              <button onClick={executeSend} style={{ fontFamily: T.sans, fontSize: 13, fontWeight: 500, padding: "8px 24px", borderRadius: 8, border: "none", background: T.coral, color: T.onCoral, cursor: "pointer" }}>send it →</button>
+            </Tooltip>
           </div>
         </div>
       )}
@@ -885,14 +1027,16 @@ export default function App() {
         <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
           <input ref={fileRef} type="file" accept={ACCEPTED} multiple onChange={e => { if (e.target.files.length) handleFiles(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
 
-          <button onClick={() => fileRef.current?.click()} disabled={processing} title="Attach file (pdf, docx, txt, image)" style={{
-            background: "transparent", border: `1px solid ${T.hairline2}`, borderRadius: 8,
-            width: 42, height: 42, flexShrink: 0, cursor: processing ? "wait" : "pointer",
-            color: attachments.length > 0 ? T.coral : T.onDarkSoft, fontSize: 18,
-            display: "flex", alignItems: "center", justifyContent: "center", opacity: processing ? 0.5 : 1,
-          }}>
-            {processing ? "⏳" : "📎"}
-          </button>
+          <Tooltip tip="Attach file — PDF, DOCX, TXT, PNG, JPG, WebP · or drag & drop anywhere" pos="top">
+            <button onClick={() => fileRef.current?.click()} disabled={processing} style={{
+              background: "transparent", border: `1px solid ${T.hairline2}`, borderRadius: 8,
+              width: 42, height: 42, flexShrink: 0, cursor: processing ? "wait" : "pointer",
+              color: attachments.length > 0 ? T.coral : T.onDarkSoft, fontSize: 18,
+              display: "flex", alignItems: "center", justifyContent: "center", opacity: processing ? 0.5 : 1,
+            }}>
+              {processing ? "⏳" : "📎"}
+            </button>
+          </Tooltip>
 
           <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKey}
             disabled={loading || counting}
@@ -900,14 +1044,16 @@ export default function App() {
             rows={1} style={{ flex: 1, resize: "none", fontFamily: T.sans, fontSize: 16, padding: "10px 13px", borderRadius: 8, border: `1px solid ${T.hairline2}`, background: T.bg0, color: T.onDark, lineHeight: 1.6, minHeight: 42 }} />
 
           {!estimate && (
-            <button onClick={countTokens} disabled={loading || counting || !canSend} style={{
-              fontFamily: T.sans, fontSize: 15, fontWeight: 500, padding: "10px 22px", height: 44, flexShrink: 0,
-              borderRadius: 8, border: "none", background: T.coral, color: T.onCoral,
-              cursor: (loading || counting || !canSend) ? "not-allowed" : "pointer",
-              transition: "all 0.12s", opacity: (loading || counting || !canSend) ? 0.4 : 1,
-            }}>
-              {counting ? "counting…" : "estimate"}
-            </button>
+            <Tooltip tip="Count exact input tokens (free API call) and show cost breakdown before sending" pos="top">
+              <button onClick={countTokens} disabled={loading || counting || !canSend} style={{
+                fontFamily: T.sans, fontSize: 15, fontWeight: 500, padding: "10px 22px", height: 44, flexShrink: 0,
+                borderRadius: 8, border: "none", background: T.coral, color: T.onCoral,
+                cursor: (loading || counting || !canSend) ? "not-allowed" : "pointer",
+                transition: "all 0.12s", opacity: (loading || counting || !canSend) ? 0.4 : 1,
+              }}>
+                {counting ? "counting…" : "estimate"}
+              </button>
+            </Tooltip>
           )}
         </div>
 
