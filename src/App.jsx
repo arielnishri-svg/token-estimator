@@ -729,6 +729,17 @@ export default function App() {
       <div style={{ background: T.bg1, borderBottom: `1px solid ${T.hairline}`, padding: "13px 20px", flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", marginBottom: 11 }}>
 
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 4 }}>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+              <line x1="9" y1="1" x2="9" y2="17" stroke={T.onDark} strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="1" y1="9" x2="17" y2="9" stroke={T.onDark} strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="3" y1="3" x2="15" y2="15" stroke={T.onDark} strokeWidth="1" strokeLinecap="round" opacity=".35"/>
+              <line x1="15" y1="3" x2="3" y2="15" stroke={T.onDark} strokeWidth="1" strokeLinecap="round" opacity=".35"/>
+            </svg>
+            <span style={{ fontFamily: T.sans, fontSize: 15, fontWeight: 500, color: T.onDark, letterSpacing: "0.01em" }}>Token Estimator</span>
+            <div style={{ width: 1, height: 20, background: T.hairline, margin: "0 2px" }} />
+          </div>
+
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Lbl>Model</Lbl>
             {modelsLoading
@@ -845,10 +856,10 @@ export default function App() {
       <ContextBar sysTokens={ctxTokens.sys} historyTokens={ctxTokens.history} lastTokens={ctxTokens.last} />
 
       {/* MESSAGES */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 10px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 10px", display: "flex", flexDirection: "column", gap: 18, background: T.bg0 }}>
         {messages.length === 0 && !loading && (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, paddingTop: 60 }}>
-            <div style={{ fontFamily: T.serif, fontSize: 32, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Configure · Estimate · Send</div>
+            <div style={{ fontFamily: T.serif, fontSize: 36, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Configure · Estimate · Send</div>
             <div style={{ fontSize: 13, color: T.muted }}>
               counts tokens before every burn · supports pdf, docx, images, txt ·{" "}
               <a href="https://claude.ai/new?q=Why+is+the+Anthropic+token+counting+API+free+to+use%3F+Explain+in+simple+terms." target="_blank" rel="noreferrer" style={{ color: T.coral, textDecoration: "none" }}>estimating is free ↗</a>
@@ -934,7 +945,7 @@ export default function App() {
       {estimate && (
         <div style={{ margin: "0 16px 0", background: T.bg1, border: `1px solid ${T.coralBorder}`, borderRadius: "10px 10px 0 0", padding: "16px 20px", borderBottom: "none" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <span style={{ fontFamily: T.serif, fontSize: 20, fontWeight: 400, color: T.onDark, letterSpacing: "-0.3px" }}>Cost estimate — confirm to send</span>
+            <span style={{ fontFamily: T.serif, fontSize: 24, fontWeight: 400, color: T.onDark, letterSpacing: "-0.5px" }}>Cost estimate — confirm to send</span>
             <Tooltip tip="Exact count from the token counting API (free call, not billed)" pos="top">
               <span style={{ fontFamily: T.mono, fontSize: 12, color: T.onDarkSoft, cursor: "default" }}>input: {fmt(estimate.inputTok)} tokens (exact)</span>
             </Tooltip>
@@ -989,7 +1000,7 @@ export default function App() {
             <div style={{ marginTop: 12, display: "flex", gap: 16, alignItems: "baseline" }}>
               <span style={{ fontSize: 13, color: T.onDarkSoft }}>Likely total:</span>
               <Tooltip tip="Input cost + likely output + ~30% of thinking budget" pos="top">
-                <span style={{ fontFamily: T.serif, fontSize: 26, color: T.coral, cursor: "default" }}>{fmtCost(estLikely)}</span>
+                <span style={{ fontFamily: T.serif, fontSize: 32, color: T.coral, cursor: "default" }}>{fmtCost(estLikely)}</span>
               </Tooltip>
               <Tooltip tip="Worst case: full max_tokens output + full thinking budget" pos="top">
                 <span style={{ fontSize: 12, color: T.muted, cursor: "default" }}>ceiling: {fmtCost(estMax)}</span>
