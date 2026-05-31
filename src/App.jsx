@@ -13,6 +13,7 @@ const PRICING = [
   { match: "haiku",      in: 1.00,  out: 5.00  },
   { match: "sonnet-4-6", in: 3.00,  out: 15.00 },
   { match: "sonnet",     in: 3.00,  out: 15.00 },
+  { match: "opus-4-8",   in: 5.00,  out: 25.00 },
   { match: "opus-4-7",   in: 5.00,  out: 25.00 },
   { match: "opus-4-6",   in: 5.00,  out: 25.00 },
   { match: "opus-4-5",   in: 5.00,  out: 25.00 },
@@ -24,6 +25,7 @@ const CAPS = [
   { match: "haiku-4-5",  effort: false, adaptive: false, modes: ["off","extended"] },
   { match: "haiku",      effort: false, adaptive: false, modes: ["off","extended"] },
   { match: "sonnet-4-6", effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
+  { match: "opus-4-8",   effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
   { match: "opus-4-7",   effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
   { match: "opus-4-6",   effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
   { match: "sonnet",     effort: true,  adaptive: true,  modes: ["off","extended","adaptive"] },
@@ -31,6 +33,7 @@ const CAPS = [
 ];
 
 const FALLBACK_MODELS = [
+  { id: "claude-opus-4-8-20250514",      display_name: "Claude Opus 4.8"   },
   { id: "claude-opus-4-7-20250514",      display_name: "Claude Opus 4.7"   },
   { id: "claude-opus-4-6",               display_name: "Claude Opus 4.6"   },
   { id: "claude-3-opus-20240229",        display_name: "Claude Opus 3"     },
@@ -42,7 +45,7 @@ const FALLBACK_MODELS = [
 // Models shown in the UI — only Claude.ai-visible models
 // To restore full list remove this filter in loadModels
 const ALLOWED_MODEL_FRAGMENTS = [
-  "opus-4-7", "opus-4-6", "opus-3", "claude-3-opus",
+  "opus-4-8", "opus-4-7", "opus-4-6", "opus-3", "claude-3-opus",
   "sonnet-4-6", "sonnet-4-5",
   "haiku-4-5",
 ];

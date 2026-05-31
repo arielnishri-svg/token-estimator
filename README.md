@@ -54,6 +54,7 @@ Configure settings → Type message → Press Enter → Review cost estimate →
 | Opus 3 | $15/$75 per MTok | Legacy flagship — strong reasoning, wide knowledge |
 | Opus 4.6 | $15/$75 per MTok | Complex reasoning, hard debugging |
 | Opus 4.7 | $15/$75 per MTok | Hardest tasks — maximum capability, quality > cost |
+| Opus 4.8 | $15/$75 per MTok | Latest flagship — strongest reasoning and capability |
 
 | Thinking mode | When to use |
 |---------------|-------------|
